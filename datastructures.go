@@ -17,3 +17,9 @@ type ResponseToNodes struct {
 	Nodes            []NodeAllInfo
 	InitalRandomness int
 }
+
+// generic msg. typ indicates which struct to decode msg to.
+type Msg struct {
+	typ string
+	msg interface{}
+}
