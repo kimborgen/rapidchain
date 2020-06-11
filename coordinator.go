@@ -52,10 +52,9 @@ func launchCoordinator(n, m, totalF, committeeF uint) {
 
 	go coordinator(chanToCoordinator, chanToNodes, &wg, n, m, totalF, committeeF)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:8080")
-	if err != nil {
-		log.Fatal("error:", err)
-	}
+	listener, err := net.Listen("tcp", ":8080")
+	ifErrFatal(err, "tcp listen on port 8080")
+
 	var i uint = 0
 
 	// block main and listen to all incoming connections
@@ -63,9 +62,7 @@ func launchCoordinator(n, m, totalF, committeeF uint) {
 
 		// accept new connection
 		conn, err := listener.Accept()
-		if err != nil {
-			log.Fatal("tcp server accept error", err)
-		}
+		ifErrFatal(err, "tcp accept")
 
 		// spawn off goroutine to able to accept new connections
 		go coordinatorHandleConnection(conn, chanToCoordinator, chanToNodes[i], &wg, &wg_done)
@@ -88,9 +85,7 @@ func coordinatorHandleConnection(conn net.Conn,
 	dec := gob.NewDecoder(conn)
 	rec_msg := new(Node_InitialMessageToCoordinator)
 	err := dec.Decode(rec_msg)
-	if err != nil {
-		log.Println("Error in decoding: ", err)
-	}
+	ifErrFatal(err, "decoding")
 
 	// get the remote address of the client
 	clientAddr := conn.RemoteAddr().String()
@@ -105,10 +100,7 @@ func coordinatorHandleConnection(conn net.Conn,
 
 	enc := gob.NewEncoder(conn)
 	err = enc.Encode(returnMessage)
-	if err != nil {
-		fmt.Printf("Error in encoding message: ", err)
-	}
-
+	ifErrFatal(err, "encoding")
 	wg_done.Done()
 }
 
