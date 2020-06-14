@@ -17,6 +17,12 @@ func sendMsg(conn net.Conn, msg interface{}) {
 	ifErrFatal(err, "encoding and sending")
 }
 
+func dialAndSend(addr string, msg interface{}) {
+	conn := dial(addr)
+	sendMsg(conn, msg)
+	conn.Close()
+}
+
 func reciveMsg(conn net.Conn, obj interface{}) {
 	dec := gob.NewDecoder(conn)
 	err := dec.Decode(obj)

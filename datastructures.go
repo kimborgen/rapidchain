@@ -3,7 +3,8 @@ package main
 // only data structures that are common in multiple, disjoint files, should belong here
 
 type Node_InitialMessageToCoordinator struct {
-	ID uint
+	ID   uint
+	Port int
 }
 
 type NodeAllInfo struct {
@@ -20,6 +21,6 @@ type ResponseToNodes struct {
 
 // generic msg. typ indicates which struct to decode msg to.
 type Msg struct {
-	typ string
-	msg interface{}
+	Typ string
+	Msg interface{}
 }
