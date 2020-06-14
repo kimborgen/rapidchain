@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -75,6 +76,19 @@ func launchCoordinator(n, m, totalF, committeeF uint) {
 
 	wg_done.Wait()
 	log.Println("Coordination executed")
+
+	// merkleroot -> number of nodes succesfully recreated it
+	successfullGossips := make(map[[32]byte]int)
+
+	// start listening for debug/stats
+	for {
+
+		// accept new connection
+		conn, err := listener.Accept()
+		ifErrFatal(err, "tcp accept")
+		// spawn off goroutine to able to accept new connections
+		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips)
+	}
 }
 
 func coordinatorHandleConnection(conn net.Conn,
@@ -89,6 +103,10 @@ func coordinatorHandleConnection(conn net.Conn,
 
 	// get the remote address of the client
 	clientAddr := conn.RemoteAddr().String()
+	// remove port number and add rec_msg.Port instead
+	fmt.Println("1: ", clientAddr)
+	clientAddr = fmt.Sprintf("%s:%d", clientAddr[:strings.IndexByte(clientAddr, ':')], rec_msg.Port)
+	fmt.Println("2: ", clientAddr)
 
 	chanToCoordinator <- InitialMessageToCoordinator{rec_msg.ID, clientAddr}
 
@@ -216,5 +234,28 @@ func coordinator(
 
 	for _, c := range chanToNodes {
 		c <- msg
+	}
+}
+
+func coordinatorDebugStatsHandleConnection(conn net.Conn, successfullGossips *map[[32]byte]int) {
+	msg := new(Msg)
+	reciveMsg(conn, msg)
+	switch msg.Typ {
+	case "IDASuccess":
+		idaMsg, ok := msg.Msg.([32]byte)
+		if !ok {
+			errFatal(ok, "IDASuccess decoding")
+		}
+		coordinatorHandleIDASuccess(idaMsg, successfullGossips)
+	default:
+		errFatal(nil, "no known message type (coordinator)")
+	}
+}
+
+func coordinatorHandleIDASuccess(root [32]byte, successfullGossips *map[[32]byte]int) {
+	(*successfullGossips)[root] += 1
+	if (*successfullGossips)[root] >= int(default_n/default_m) {
+		// this is not perfect, but it will atleast show if all nodes recived a successfull ida msg
+		log.Println("IDAGossip success for root ", root, "with ", (*successfullGossips)[root], " nodes succesfull")
 	}
 }
