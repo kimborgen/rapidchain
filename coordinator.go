@@ -23,6 +23,10 @@ type committeeInfo struct {
 	f   int
 }
 
+type consensusResult struct {
+	echos, pending, accepts int
+}
+
 func launchCoordinator(n, m, totalF, committeeF uint) {
 	/*
 		The coordinator should listen to incoming connections untill it has recived n different ids
@@ -80,6 +84,9 @@ func launchCoordinator(n, m, totalF, committeeF uint) {
 	// merkleroot -> number of nodes succesfully recreated it
 	successfullGossips := make(map[[32]byte]int)
 
+	// committee -> iteration -> echo, pending, accept messages
+	consensusResults := new(consensusResult)
+
 	// start listening for debug/stats
 	for {
 
@@ -87,7 +94,7 @@ func launchCoordinator(n, m, totalF, committeeF uint) {
 		conn, err := listener.Accept()
 		ifErrFatal(err, "tcp accept")
 		// spawn off goroutine to able to accept new connections
-		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips)
+		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults)
 	}
 }
 
@@ -237,7 +244,9 @@ func coordinator(
 	}
 }
 
-func coordinatorDebugStatsHandleConnection(conn net.Conn, successfullGossips *map[[32]byte]int) {
+func coordinatorDebugStatsHandleConnection(conn net.Conn,
+	successfullGossips *map[[32]byte]int,
+	consensusResults *consensusResult) {
 	msg := new(Msg)
 	reciveMsg(conn, msg)
 	switch msg.Typ {
@@ -247,6 +256,11 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn, successfullGossips *ma
 			errFatal(ok, "IDASuccess decoding")
 		}
 		coordinatorHandleIDASuccess(idaMsg, successfullGossips)
+
+	case "consensus":
+		cMsg, ok := msg.Msg.(string)
+		notOkErr(ok, "coordinator consensus cMsg decoding")
+		coordinatorHandleConsensus(cMsg, consensusResults)
 	default:
 		errFatal(nil, "no known message type (coordinator)")
 	}
@@ -258,4 +272,26 @@ func coordinatorHandleIDASuccess(root [32]byte, successfullGossips *map[[32]byte
 		// this is not perfect, but it will atleast show if all nodes recived a successfull ida msg
 		log.Println("IDAGossip success for root ", root, "with ", (*successfullGossips)[root], " nodes succesfull")
 	}
+}
+
+func coordinatorHandleConsensus(tag string, consensusResults *consensusResult) {
+
+	tmp := (*consensusResults)
+	switch tag {
+	case "echo":
+		tmp.echos += 1
+	case "pending":
+		tmp.pending += 1
+	case "accept":
+		tmp.accepts += 1
+	}
+	(*consensusResults) = tmp
+	if v := uint((default_n/default_m)/default_committeeF) + uint(1); uint(tmp.accepts) >= v {
+		log.Println(tmp.accepts, " accepts")
+	} else if v <= uint(tmp.pending) {
+		log.Println(tmp.pending, " pendings")
+	} else if v <= uint(tmp.echos) {
+		log.Println(tmp.echos, " echos")
+	}
+
 }
