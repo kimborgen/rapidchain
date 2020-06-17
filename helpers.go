@@ -7,7 +7,7 @@ import (
 
 func ifErr(e interface{}, msg string) bool {
 	if e != nil {
-		log.Printf("[Error] %s with error %s", msg, e)
+		log.Printf("[Error] msg(%s) error (%s)", msg, e)
 		return true
 	}
 	return false
@@ -15,7 +15,7 @@ func ifErr(e interface{}, msg string) bool {
 
 func ifErrFatal(e interface{}, msg string) bool {
 	if e != nil {
-		log.Fatalf("[Fatal] msg(%s) with error(%s)", msg, e)
+		log.Fatalf("[Fatal] msg(%s) error(%s)", msg, e)
 		panic(e)
 		return true
 	}
@@ -23,12 +23,18 @@ func ifErrFatal(e interface{}, msg string) bool {
 }
 
 func errr(e interface{}, msg string) {
-	log.Printf("[Error] %s with error %s", msg, e)
+	log.Printf("[Error] msg(%s) error(%s)", msg, e)
 }
 
 func errFatal(e interface{}, msg string) {
-	log.Fatalf("[Fatal] %s with error: %s", msg, e)
+	log.Fatalf("[Fatal] msg(%s) error: (%s)", msg, e)
 	panic(e)
+}
+
+func notOkErr(ok bool, msg string) {
+	if !ok {
+		errFatal(ok, msg)
+	}
 }
 
 func randIndexesWithoutReplacement(arrayLength, sampleSize int) []int {

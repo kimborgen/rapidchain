@@ -36,6 +36,7 @@ func main() {
 	// register structs with gob
 	gob.Register(IDAGossipMsg{})
 	gob.Register([32]uint8{})
+	gob.Register(BlockHeader{})
 
 	if *functionPtr == "coordinator" {
 		launchCoordinator(*nPtr, *mPtr, *totalFPtr, *committeeFPtr)
