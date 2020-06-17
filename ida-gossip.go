@@ -112,6 +112,7 @@ func IDAGossip(
 	return root32
 }
 
+/*
 func getLenOfChunks(msgs []IDAGossipMsg) int {
 	var totalChunks int
 	for _, msg := range msgs {
@@ -120,16 +121,15 @@ func getLenOfChunks(msgs []IDAGossipMsg) int {
 	return totalChunks
 }
 
+*/
+
 func handleIDAGossipMsg(
 	idaMsg IDAGossipMsg,
-	idaMsgs *map[[32]byte][]IDAGossipMsg,
-	currentCommittee *Committee,
-	currentNeighbours *[]uint,
-	self *NodeAllInfo) ([32]byte, [][]byte) {
+	nodeCtx *NodeCtx) ([32]byte, [][]byte) {
 	// check if we allready have enough chunks to recreate
 	//fmt.Println("Len of IDAMessages: ", len((*idaMsgs)[idaMsg.MerkleRoot]))
 	//log.Println("Len of chunks: ", getLenOfChunks((*idaMsgs)[idaMsg.MerkleRoot]))
-	if l := getLenOfChunks((*idaMsgs)[idaMsg.MerkleRoot]); l >= default_kappa {
+	if l := nodeCtx.idaMsgs.getLenOfChunks(idaMsg.MerkleRoot); l >= default_kappa {
 		// log.Printf("#IDAchunks allready enough %d of required %d\n", l, default_kappa)
 		return [32]byte{}, nil
 	}
@@ -153,14 +153,13 @@ func handleIDAGossipMsg(
 	}
 
 	// check if merkleRoot is new
-	if _, ok := (*idaMsgs)[idaMsg.MerkleRoot]; !ok {
-		(*idaMsgs)[idaMsg.MerkleRoot] = []IDAGossipMsg{idaMsg}
-		gossipSend(idaMsg, currentCommittee, currentNeighbours, self.ID)
+	if ok := nodeCtx.idaMsgs.isArr(idaMsg.MerkleRoot); !ok {
+		nodeCtx.idaMsgs.add(idaMsg.MerkleRoot, idaMsg)
+		gossipSend(idaMsg, nodeCtx)
 	} else {
-		arr := (*idaMsgs)[idaMsg.MerkleRoot]
 		// check if the message is unique
 		for _, newProof := range idaMsg.Proofs {
-			for _, existingMsg := range arr {
+			for _, existingMsg := range nodeCtx.idaMsgs.getMsgs(idaMsg.MerkleRoot) {
 				for _, existingProof := range existingMsg.Proofs {
 					// check if index is equal
 					if newProof.Index == existingProof.Index {
@@ -172,13 +171,13 @@ func handleIDAGossipMsg(
 		}
 
 		// add to list
-		(*idaMsgs)[idaMsg.MerkleRoot] = append((*idaMsgs)[idaMsg.MerkleRoot], idaMsg)
+		nodeCtx.idaMsgs.add(idaMsg.MerkleRoot, idaMsg)
 
 		// check if we have enough chunks to recreate
-		if getLenOfChunks((*idaMsgs)[idaMsg.MerkleRoot]) >= default_kappa {
+		if nodeCtx.idaMsgs.getLenOfChunks(idaMsg.MerkleRoot) >= default_kappa {
 			// recreate data array and fill it with known chunks
 			data := make([][]byte, default_kappa+default_parity)
-			for _, elem := range (*idaMsgs)[idaMsg.MerkleRoot] {
+			for _, elem := range nodeCtx.idaMsgs.getMsgs(idaMsg.MerkleRoot) {
 				for i, chunk := range elem.Chunks {
 					// gather leaf node position from proof
 					index := elem.Proofs[i].Index
@@ -203,29 +202,29 @@ func handleIDAGossipMsg(
 			log.Println("Message succesfully recreated!")
 
 			// send success message to coordinator
-			msg := Msg{"IDASuccess", idaMsg.MerkleRoot, self.ID}
+			msg := Msg{"IDASuccess", idaMsg.MerkleRoot, nodeCtx.self.ID}
 			dialAndSend("127.0.0.1:8080", msg)
-			gossipSend(idaMsg, currentCommittee, currentNeighbours, self.ID)
+			gossipSend(idaMsg, nodeCtx)
 			return idaMsg.MerkleRoot, data
 		}
 
-		gossipSend(idaMsg, currentCommittee, currentNeighbours, self.ID)
+		gossipSend(idaMsg, nodeCtx)
 
 	}
 	return [32]byte{}, nil
 }
 
-func gossipSend(msg IDAGossipMsg, currentCommittee *Committee, currentNeighbours *[]uint, selfID uint) {
+func gossipSend(msg IDAGossipMsg, nodeCtx *NodeCtx) {
 	// If we do not have enough chunks then gossip the message to all neighbours
-	msgs := make([]Msg, len(*currentNeighbours))
+	msgs := make([]Msg, len(nodeCtx.neighbors))
 
 	for i := range msgs {
-		msgs[i] = Msg{"IDAGossipMsg", msg, selfID}
+		msgs[i] = Msg{"IDAGossipMsg", msg, nodeCtx.self.ID}
 	}
 
 	// send each msg to node
 	for i, msg := range msgs {
-		var addr string = currentCommittee.Members[(*currentNeighbours)[i]].IP
+		var addr string = nodeCtx.committee.Members[nodeCtx.neighbors[i]].IP
 		//log.Printf("addr: %s\n", addr)
 		go dialAndSend(addr, msg)
 	}
