@@ -52,7 +52,7 @@ func launchNode(flagArgs *FlagArgs) {
 
 	// If this node is leader then initate ida-gossip
 	if leaderID == allInfo.self.ID {
-		leader(flagArgs, leaderID, &currentCommittee, &currentNeighbours)
+		leader(nodeCtx)
 	}
 
 	// blocker
@@ -128,20 +128,7 @@ func nodeHandleConnection(
 	case "IDAGossipMsg":
 		idaMsg, ok := msg.Msg.(IDAGossipMsg)
 		notOkErr(ok, "IDAGossipMsg decoding")
-
-		go func() {
-			root, block := handleIDAGossipMsg(idaMsg, nodeCtx)
-			if nodeCtx.idaMsgs.getLenOfChunks(idaMsg.MerkleRoot) > default_kappa {
-				// log.Printf("have enough blocks allready")
-				return
-			}
-			if block != nil {
-				if !nodeCtx.blocks.isBlock(root) {
-					errFatal(nil, "Already have a block for this root")
-				}
-				nodeCtx.blocks.add(root, block)
-			}
-		}()
+		go handleIDAGossipMsg(idaMsg, nodeCtx)
 
 	case "consensus":
 		blockHeader, ok := msg.Msg.(BlockHeader)
@@ -213,32 +200,39 @@ func createBlock(B uint) []byte {
 	return b
 }
 
-func leader(flagArgs *FlagArgs, selfID uint, currentCommittee *Committee, currentNeighbours *[]uint) {
+func leader(nodeCtx *NodeCtx) {
 	// initates leader process
 
 	// create a block
-	block := createBlock(flagArgs.B)
+	block := createBlock(nodeCtx.flagArgs.B)
 
 	// ida-gossip the block
-	merkleRoot := IDAGossip(flagArgs, currentCommittee, currentNeighbours, selfID, &block)
+	merkleRoot := IDAGossip(nodeCtx, block)
 
 	// we should wait untill IDA gossip finnishes...
 	//dur := time.Duration(math.Log(float64(flagArgs.m)))
 	//log.Println("sleeping for ", dur)
 	//time.Sleep(dur)
-	time.Sleep(3 * time.Second)
+	// wait until we have recivied and recreated IDA message
+
+	for !nodeCtx.blocks.isBlock(merkleRoot) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	// sleep a delta before iniation consensus
+	time.Sleep(default_delta * time.Millisecond)
+
 	// create block header
 	header := new(BlockHeader)
 	header.I = 0
 	header.Root = merkleRoot
-	header.LeaderID = selfID
+	header.LeaderID = nodeCtx.self.ID
 	header.Tag = "propose"
 
-	msg := Msg{"consensus", header, selfID}
+	msg := Msg{"consensus", header, nodeCtx.self.ID}
 
 	// start consensus rounds.
-	log.Printf("Leader starting conseuss \n", len((*currentCommittee).Members))
-	sendMsgToCommittee(msg, currentCommittee)
+	log.Printf("Leader starting conseuss \n")
+	sendMsgToCommittee(msg, &nodeCtx.committee)
 }
 
 func handleConsensus(

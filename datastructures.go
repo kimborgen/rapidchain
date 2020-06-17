@@ -123,6 +123,16 @@ func (b *Blocks) add(root [32]byte, block [][]byte) {
 	b.mux.Unlock()
 }
 
+func (b *Blocks) safeAdd(root [32]byte, block [][]byte) bool {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	if _, ok := b.m[root]; ok {
+		return false
+	}
+	b.m[root] = block
+	return true
+}
+
 func (b *Blocks) getBlock(root [32]byte) [][]byte {
 	b.mux.Lock()
 	defer b.mux.Unlock()
