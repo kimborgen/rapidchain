@@ -18,7 +18,8 @@ func IDAGossip(
 	flagArgs *FlagArgs,
 	currentCommittee *Committee,
 	currentNeighbours *[]uint,
-	B *[]byte) {
+	selfID uint,
+	B *[]byte) [32]byte {
 	// Initiates the IDA gossip process
 	block := *B
 	// initate some static variables
@@ -95,18 +96,20 @@ func IDAGossip(
 	total_chunks := 0
 	for i := 0; i < len(*currentNeighbours)*chunksToEach; i += chunksToEach {
 		chunks := data[i : i+chunksToEach]
-		fmt.Println("\n\n", chunks)
+		//fmt.Println("\n\n", chunks)
 		total_chunks += len(chunks)
 		proofs := proofs[i : i+chunksToEach]
-		msgs[ii] = Msg{"IDAGossipMsg", IDAGossipMsg{chunks, proofs, root32}}
+		msgs[ii] = Msg{"IDAGossipMsg", IDAGossipMsg{chunks, proofs, root32}, selfID}
 		ii += 1
 	}
 	log.Println("Creating: Len of chunks ", total_chunks, chunksToEach, len(msgs))
 
 	// send each msg to node
 	for i, msg := range msgs {
-		dialAndSend(currentCommittee.Members[(*currentNeighbours)[i]].IP, msg)
+		var addr string = currentCommittee.Members[(*currentNeighbours)[i]].IP
+		dialAndSend(addr, msg)
 	}
+	return root32
 }
 
 func getLenOfChunks(msgs []IDAGossipMsg) int {
@@ -121,19 +124,20 @@ func handleIDAGossipMsg(
 	idaMsg IDAGossipMsg,
 	idaMsgs *map[[32]byte][]IDAGossipMsg,
 	currentCommittee *Committee,
-	currentNeighbours *[]uint) {
+	currentNeighbours *[]uint,
+	self *NodeAllInfo) ([32]byte, [][]byte) {
 	// check if we allready have enough chunks to recreate
 	//fmt.Println("Len of IDAMessages: ", len((*idaMsgs)[idaMsg.MerkleRoot]))
 	//log.Println("Len of chunks: ", getLenOfChunks((*idaMsgs)[idaMsg.MerkleRoot]))
 	if l := getLenOfChunks((*idaMsgs)[idaMsg.MerkleRoot]); l >= default_kappa {
 		// log.Printf("#IDAchunks allready enough %d of required %d\n", l, default_kappa)
-		return
+		return [32]byte{}, nil
 	}
 
 	// check that IDA messages was correct
 	if len(idaMsg.Chunks) != len(idaMsg.Proofs) {
 		errr(nil, "number of proofs not matching amount of chunks")
-		return
+		return [32]byte{}, nil
 	}
 	for i, _ := range idaMsg.Chunks {
 		root := make([]byte, 32)
@@ -144,14 +148,14 @@ func handleIDAGossipMsg(
 		fail := ifErr(err, "merkletree.Verifyproof")
 		if fail || !verified {
 			errr(nil, "chunk could not be verified")
-			return
+			return [32]byte{}, nil
 		}
 	}
 
 	// check if merkleRoot is new
 	if _, ok := (*idaMsgs)[idaMsg.MerkleRoot]; !ok {
 		(*idaMsgs)[idaMsg.MerkleRoot] = []IDAGossipMsg{idaMsg}
-		gossip(idaMsg, currentCommittee, currentNeighbours)
+		gossipSend(idaMsg, currentCommittee, currentNeighbours, self.ID)
 	} else {
 		arr := (*idaMsgs)[idaMsg.MerkleRoot]
 		// check if the message is unique
@@ -160,8 +164,8 @@ func handleIDAGossipMsg(
 				for _, existingProof := range existingMsg.Proofs {
 					// check if index is equal
 					if newProof.Index == existingProof.Index {
-						log.Printf("Found existing proof with same index\n")
-						return
+						//log.Printf("Found existing proof with same index\n")
+						return [32]byte{}, nil
 					}
 				}
 			}
@@ -199,25 +203,30 @@ func handleIDAGossipMsg(
 			log.Println("Message succesfully recreated!")
 
 			// send success message to coordinator
-			msg := Msg{"IDASuccess", idaMsg.MerkleRoot}
+			msg := Msg{"IDASuccess", idaMsg.MerkleRoot, self.ID}
 			dialAndSend("127.0.0.1:8080", msg)
+			gossipSend(idaMsg, currentCommittee, currentNeighbours, self.ID)
+			return idaMsg.MerkleRoot, data
 		}
 
-		gossip(idaMsg, currentCommittee, currentNeighbours)
+		gossipSend(idaMsg, currentCommittee, currentNeighbours, self.ID)
 
 	}
+	return [32]byte{}, nil
 }
 
-func gossip(idaMsg IDAGossipMsg, currentCommittee *Committee, currentNeighbours *[]uint) {
+func gossipSend(msg IDAGossipMsg, currentCommittee *Committee, currentNeighbours *[]uint, selfID uint) {
 	// If we do not have enough chunks then gossip the message to all neighbours
 	msgs := make([]Msg, len(*currentNeighbours))
 
 	for i := range msgs {
-		msgs[i] = Msg{"IDAGossipMsg", idaMsg}
+		msgs[i] = Msg{"IDAGossipMsg", msg, selfID}
 	}
 
 	// send each msg to node
 	for i, msg := range msgs {
-		dialAndSend(currentCommittee.Members[(*currentNeighbours)[i]].IP, msg)
+		var addr string = currentCommittee.Members[(*currentNeighbours)[i]].IP
+		//log.Printf("addr: %s\n", addr)
+		go dialAndSend(addr, msg)
 	}
 }
