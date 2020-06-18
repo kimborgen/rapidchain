@@ -58,7 +58,31 @@ func launchNode(flagArgs *FlagArgs) {
 	if leaderID == allInfo.self.ID {
 		//fmt.Println("\n\n\n", nodeCtx.routingTable, "\n\n\n")
 
-		leader(nodeCtx)
+		// leader(nodeCtx)
+
+		time.Sleep(3 * time.Second)
+		// fmt.Println("\n\n", nodeCtx.self.CommitteeID, "\n", nodeCtx.routingTable, "\n\n")
+		// find a committee that is not in routing table
+		for _, n := range allInfo.nodes {
+			var isIn bool = false
+			if n.CommitteeID == nodeCtx.self.CommitteeID {
+				isIn = true
+			} else {
+				for _, c := range nodeCtx.routingTable.l {
+					if n.CommitteeID == c.ID {
+						isIn = true
+						break
+					}
+				}
+			}
+			if isIn {
+				continue
+			}
+			// fmt.Println("\n\n\n", nodeCtx.self.CommitteeID, n.CommitteeID, "\n\n\n")
+			c := findNode(nodeCtx, n.CommitteeID)
+			log.Println("Found committee! ", c)
+			break
+		}
 	}
 
 	// blocker
@@ -105,7 +129,11 @@ func coordinatorSetup(conn net.Conn, portNumber int, flagArgs *FlagArgs) (AllInf
 	}
 
 	// create routing table,
-	length := math.Log(float64(flagArgs.m))
+	length := math.Ceil(math.Log(float64(flagArgs.m))) + 1
+	// check m is power of two:
+	if (flagArgs.m & (flagArgs.m - 1)) != 0 {
+		length++
+	}
 	log.Println("Routingtable length: ", length, int(length))
 
 	routingTable.init(int(length))
@@ -113,6 +141,10 @@ func coordinatorSetup(conn net.Conn, portNumber int, flagArgs *FlagArgs) (AllInf
 	committees := make(map[uint]bool)
 	// get a list of committees
 	for _, node := range allInfo.nodes {
+		// exclude own committee
+		if allInfo.self.CommitteeID == node.CommitteeID {
+			continue
+		}
 		committees[node.CommitteeID] = true
 	}
 
@@ -127,20 +159,25 @@ func coordinatorSetup(conn net.Conn, portNumber int, flagArgs *FlagArgs) (AllInf
 	// now we sort by increasing value since the closest ids are the ones with the longest leading zero
 	sort.Slice(xored, func(i, j int) bool { return xored[i] < xored[j] })
 
+	/*
+		for _, x := range xored {
+			fmt.Println(allInfo.self.CommitteeID, "   ", allInfo.self.CommitteeID^x, "   ", x)
+		}*/
+
 	kademliaCommittees := []uint{}
 	// pick committees in 2^i distances
 	for i := uint(0); true; i++ {
-		if i >= uint(length) {
-			break
-		}
 		dist := int(math.Pow(2, float64(i))) - 1
 		if dist >= len(xored) {
-			break
+			dist = len(xored) - 1
 		}
 
 		// we need to xor the xored to get the original id
 		kademliaCommittees = append(kademliaCommittees, allInfo.self.CommitteeID^xored[dist])
 		routingTable.addCommittee(i, allInfo.self.CommitteeID^xored[dist])
+		if dist == len(xored)-1 {
+			break
+		}
 	}
 
 	// get all nodes from these committees
@@ -165,9 +202,9 @@ func coordinatorSetup(conn net.Conn, portNumber int, flagArgs *FlagArgs) (AllInf
 	for i, c := range kademliaCommittees {
 		// pick loglogn
 		l := len(nodesInKadamliaCommittees[c])
-		per := int(math.Log(float64(l)))
+		per := int(math.Ceil(math.Log(float64(l))))
 		indexes := randIndexesWithoutReplacement(l, per)
-		//fmt.Println(l, per, indexes)
+		fmt.Println("Per committee: ", per)
 		if per == 0 {
 			errFatal(nil, "routingtable per was 0")
 		}
@@ -228,6 +265,16 @@ func nodeHandleConnection(
 		}
 
 		go handleConsensus(nodeCtx, blockHeader, msg.FromID)
+	case "find_node":
+		kMsg, ok := msg.Msg.(KademliaFindNodeMsg)
+		notOkErr(ok, "findNode decoding")
+
+		if kMsg.ID == nodeCtx.self.CommitteeID {
+			errFatal(nil, "Got a find_node msg but I am the target committee")
+		}
+
+		handleFindNode(nodeCtx, conn, kMsg)
+
 	default:
 		log.Fatal("[Error] no known message type")
 	}

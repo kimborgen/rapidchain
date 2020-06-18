@@ -37,6 +37,8 @@ func main() {
 	gob.Register(IDAGossipMsg{})
 	gob.Register([32]uint8{})
 	gob.Register(BlockHeader{})
+	gob.Register(KademliaFindNodeMsg{})
+	gob.Register(KademliaFindNodeResponse{})
 
 	if *functionPtr == "coordinator" {
 		launchCoordinator(*nPtr, *mPtr, *totalFPtr, *committeeFPtr)

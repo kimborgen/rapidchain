@@ -35,6 +35,23 @@ type Committee struct {
 	Members map[uint]CommitteeMember
 }
 
+func (c *Committee) init(ID uint) {
+	c.ID = ID
+	c.Members = make(map[uint]CommitteeMember)
+}
+
+func (c *Committee) addMember(m CommitteeMember) {
+	c.Members[m.ID] = m
+}
+
+func (c *Committee) safeAddMember(m CommitteeMember) bool {
+	if _, ok := c.Members[m.ID]; !ok {
+		return false
+	}
+	c.addMember(m)
+	return true
+}
+
 // Cheat data to know all nodes in the system
 type AllInfo struct {
 	self  NodeAllInfo
@@ -72,6 +89,20 @@ func (r *RoutingTable) addMember(i uint, cm CommitteeMember) {
 	r.mux.Lock()
 	r.l[i].Members[cm.ID] = cm
 	r.mux.Unlock()
+}
+
+func (r *RoutingTable) get() []Committee {
+	r.mux.Lock()
+	defer r.mux.Unlock()
+	return r.l
+}
+
+type KademliaFindNodeMsg struct {
+	ID uint
+}
+
+type KademliaFindNodeResponse struct {
+	Committee Committee
 }
 
 type IdaMsgs struct {
