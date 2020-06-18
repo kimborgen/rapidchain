@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net"
+	"sort"
 	"time"
 )
 
@@ -16,7 +18,7 @@ func launchNode(flagArgs *FlagArgs) {
 	listener, err := net.Listen("tcp", ":0")
 	ifErrFatal(err, "listener node")
 	portNumber := listener.Addr().(*net.TCPAddr).Port
-	allInfo, initialRandomness, currentCommittee := coordinatorSetup(conn, portNumber)
+	allInfo, initialRandomness, currentCommittee, routingTable := coordinatorSetup(conn, portNumber, flagArgs)
 	initialRandomness = initialRandomness
 	//fmt.Print(allInfo, initialRandomness, currentCommittee, "\n\n")
 
@@ -44,6 +46,8 @@ func launchNode(flagArgs *FlagArgs) {
 
 	nodeCtx.i = CurrentIteration{}
 
+	nodeCtx.routingTable = routingTable
+
 	// launch listener
 	go listen(listener, nodeCtx)
 
@@ -52,6 +56,8 @@ func launchNode(flagArgs *FlagArgs) {
 
 	// If this node is leader then initate ida-gossip
 	if leaderID == allInfo.self.ID {
+		//fmt.Println("\n\n\n", nodeCtx.routingTable, "\n\n\n")
+
 		leader(nodeCtx)
 	}
 
@@ -60,7 +66,7 @@ func launchNode(flagArgs *FlagArgs) {
 	}
 }
 
-func coordinatorSetup(conn net.Conn, portNumber int) (AllInfo, int, Committee) {
+func coordinatorSetup(conn net.Conn, portNumber int, flagArgs *FlagArgs) (AllInfo, int, Committee, RoutingTable) {
 	// setup with the help of coordinator
 
 	// create a random ID
@@ -77,6 +83,7 @@ func coordinatorSetup(conn net.Conn, portNumber int) (AllInfo, int, Committee) {
 	var allInfo AllInfo
 	var initialRandomness int
 	var currentCommittee Committee
+	var routingTable RoutingTable
 
 	allInfo.nodes = make(map[uint]NodeAllInfo)
 	for _, elem := range response.Nodes {
@@ -97,8 +104,84 @@ func coordinatorSetup(conn net.Conn, portNumber int) (AllInfo, int, Committee) {
 		}
 	}
 
+	// create routing table,
+	length := math.Log(float64(flagArgs.m))
+	log.Println("Routingtable length: ", length, int(length))
+
+	routingTable.init(int(length))
+
+	committees := make(map[uint]bool)
+	// get a list of committees
+	for _, node := range allInfo.nodes {
+		committees[node.CommitteeID] = true
+	}
+
+	xored := make([]uint, len(committees))
+	// sort committes after some distance metric (XOR kademlia)
+	i := 0
+	for k := range committees {
+		// bitwise XOR
+		xored[i] = allInfo.self.CommitteeID ^ k
+		i++
+	}
+	// now we sort by increasing value since the closest ids are the ones with the longest leading zero
+	sort.Slice(xored, func(i, j int) bool { return xored[i] < xored[j] })
+
+	kademliaCommittees := []uint{}
+	// pick committees in 2^i distances
+	for i := uint(0); true; i++ {
+		if i >= uint(length) {
+			break
+		}
+		dist := int(math.Pow(2, float64(i))) - 1
+		if dist >= len(xored) {
+			break
+		}
+
+		// we need to xor the xored to get the original id
+		kademliaCommittees = append(kademliaCommittees, allInfo.self.CommitteeID^xored[dist])
+		routingTable.addCommittee(i, allInfo.self.CommitteeID^xored[dist])
+	}
+
+	// get all nodes from these committees
+	nodesInKadamliaCommittees := make(map[uint][]NodeAllInfo)
+	for k := range kademliaCommittees {
+		nodesInKadamliaCommittees[uint(k)] = []NodeAllInfo{}
+	}
+	for _, n := range allInfo.nodes {
+		for _, k := range kademliaCommittees {
+			if k == n.CommitteeID {
+				nodesInKadamliaCommittees[n.CommitteeID] = append(nodesInKadamliaCommittees[n.CommitteeID], n)
+			}
+		}
+	}
+
+	// fmt.Println(nodesInKadamliaCommittees)
+
+	// fmt.Printf("Had %d committes and turned it into %d neighbors\n", len(xored), len(kademliaCommittees))
+
+	// fmt.Printf("Nodes per committee %d, and inted %d\n", math.Log(math.Log(float64(flagArgs.n))), int(math.Log(math.Log(float64(flagArgs.n)))))
+	// get i random index arrays, and use them to get loglogn nodes from each of those committees
+	for i, c := range kademliaCommittees {
+		// pick loglogn
+		l := len(nodesInKadamliaCommittees[c])
+		per := int(math.Log(float64(l)))
+		indexes := randIndexesWithoutReplacement(l, per)
+		//fmt.Println(l, per, indexes)
+		if per == 0 {
+			errFatal(nil, "routingtable per was 0")
+		}
+		for _, j := range indexes {
+			node := nodesInKadamliaCommittees[c][j]
+			tmp := CommitteeMember{node.ID, node.IP}
+			routingTable.addMember(uint(i), tmp)
+		}
+	}
+
+	// and success!
+
 	//log.Printf("Coordinaton setup finished \n")
-	return allInfo, initialRandomness, currentCommittee
+	return allInfo, initialRandomness, currentCommittee, routingTable
 }
 
 func listen(
@@ -287,7 +370,7 @@ func handleConsensus(
 
 			// fmt.Println((*consensusMsgs)[header.I][fromID])
 			// add header to consensusMsgs
-			nodeCtx.consensusMsgs.add(header.I, fromID, header)
+			nodeCtx.consensusMsgs.safeAdd(header.I, fromID, header, "echo: block header allready exists")
 
 			nodeCtx.channels.echoChan <- true
 		}()

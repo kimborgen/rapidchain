@@ -1,6 +1,8 @@
 package main
 
-import "sync"
+import (
+	"sync"
+)
 
 // only data structures that are common in multiple, disjoint files, should belong here
 
@@ -45,6 +47,31 @@ type BlockHeader struct {
 	Root     [32]byte
 	LeaderID uint
 	Tag      string
+}
+
+// routing table
+type RoutingTable struct {
+	l   []Committee // Your known commites, sorted by distance
+	mux sync.Mutex
+}
+
+func (r *RoutingTable) init(length int) {
+	r.mux.Lock()
+	r.l = make([]Committee, length)
+	r.mux.Unlock()
+}
+
+func (r *RoutingTable) addCommittee(i, ID uint) {
+	r.mux.Lock()
+	r.l[i] = Committee{ID: ID}
+	r.l[i].Members = make(map[uint]CommitteeMember)
+	r.mux.Unlock()
+}
+
+func (r *RoutingTable) addMember(i uint, cm CommitteeMember) {
+	r.mux.Lock()
+	r.l[i].Members[cm.ID] = cm
+	r.mux.Unlock()
 }
 
 type IdaMsgs struct {
@@ -187,9 +214,7 @@ func (cMsg *ConsensusMsgs) safeAdd(i, ID uint, header BlockHeader, errMsg string
 	if cMsg.m[i] == nil {
 		cMsg.m[i] = make(map[uint]BlockHeader)
 	}
-	if _, ok := cMsg.m[i][ID]; ok {
-		errFatal(nil, errMsg)
-	}
+
 	cMsg.m[i][ID] = header
 	cMsg.mux.Unlock()
 }
@@ -256,6 +281,7 @@ type NodeCtx struct {
 	consensusMsgs ConsensusMsgs
 	channels      Channels
 	i             CurrentIteration
+	routingTable  RoutingTable
 }
 
 // generic msg. typ indicates which struct to decode msg to.
