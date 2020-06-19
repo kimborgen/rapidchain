@@ -18,6 +18,9 @@ func main() {
 	committeeFPtr := flag.Uint("committeeF", default_committeeF, "Committee adversary tolerance in the form of the divisor (1/x)")
 	dPtr := flag.Uint("d", default_d, "d neighbours")
 	BPtr := flag.Uint("B", default_B, "block size in bytes")
+	nUsersPtr := flag.Uint("nUsers", default_nUsers, "users in system")
+	totalCointsPtr := flag.Uint("totalCoins", default_totalCoins, "total coins in system")
+	tpsPtr := flag.Uint("tps", default_tps, "transactions per second")
 
 	flag.Parse()
 
@@ -32,6 +35,9 @@ func main() {
 	flagArgs.committeeF = *committeeFPtr
 	flagArgs.d = *dPtr
 	flagArgs.B = *BPtr
+	flagArgs.nUsers = *nUsersPtr
+	flagArgs.totalCoins = *totalCointsPtr
+	flagArgs.tps = *tpsPtr
 
 	// register structs with gob
 	gob.Register(IDAGossipMsg{})
@@ -41,7 +47,7 @@ func main() {
 	gob.Register(KademliaFindNodeResponse{})
 
 	if *functionPtr == "coordinator" {
-		launchCoordinator(*nPtr, *mPtr, *totalFPtr, *committeeFPtr)
+		launchCoordinator(&flagArgs)
 	} else {
 		launchNodes(&flagArgs)
 	}

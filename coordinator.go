@@ -27,7 +27,10 @@ type consensusResult struct {
 	echos, pending, accepts int
 }
 
-func launchCoordinator(n, m, totalF, committeeF uint) {
+var g_allNodes []NodeAllInfo
+var g_allNodesPopulated chan bool
+
+func launchCoordinator(flagArgs *FlagArgs) {
 	/*
 		The coordinator should listen to incoming connections untill it has recived n different ids
 		Then it should create:
@@ -38,24 +41,26 @@ func launchCoordinator(n, m, totalF, committeeF uint) {
 		These variables should then be sent to every node.
 	*/
 
+	g_allNodesPopulated = make(chan bool)
+
 	// To be used to send ID and IP from node connection to coordinator
-	chanToCoordinator := make(chan InitialMessageToCoordinator, n)
+	chanToCoordinator := make(chan InitialMessageToCoordinator, flagArgs.n)
 
 	// To be used to send result back to node connection
-	chanToNodes := make([]chan ResponseToNodes, n)
-	for i := uint(0); i < n; i++ {
+	chanToNodes := make([]chan ResponseToNodes, flagArgs.n)
+	for i := uint(0); i < flagArgs.n; i++ {
 		chanToNodes[i] = make(chan ResponseToNodes)
 	}
 
 	// waitgroup for all node connections to have recived an ID
 	var wg sync.WaitGroup
-	wg.Add(int(n))
+	wg.Add(int(flagArgs.n))
 
 	// waitgroup for when coordinator is done and sent all data to connections
 	var wg_done sync.WaitGroup
-	wg_done.Add(int(n))
+	wg_done.Add(int(flagArgs.n))
 
-	go coordinator(chanToCoordinator, chanToNodes, &wg, n, m, totalF, committeeF)
+	go coordinator(chanToCoordinator, chanToNodes, &wg, flagArgs)
 
 	listener, err := net.Listen("tcp", ":8080")
 	ifErrFatal(err, "tcp listen on port 8080")
@@ -63,7 +68,7 @@ func launchCoordinator(n, m, totalF, committeeF uint) {
 	var i uint = 0
 
 	// block main and listen to all incoming connections
-	for i < n {
+	for i < flagArgs.n {
 
 		// accept new connection
 		conn, err := listener.Accept()
@@ -72,7 +77,7 @@ func launchCoordinator(n, m, totalF, committeeF uint) {
 		// spawn off goroutine to able to accept new connections
 		go coordinatorHandleConnection(conn, chanToCoordinator, chanToNodes[i], &wg, &wg_done)
 
-		if n > 20 && i%(n/10) == 0 {
+		if flagArgs.n > 20 && i%(flagArgs.n/10) == 0 {
 			fmt.Printf("#connections: %d", i)
 		}
 		i += 1
@@ -133,14 +138,14 @@ func coordinator(
 	chanToCoordinator chan InitialMessageToCoordinator,
 	chanToNodes []chan ResponseToNodes,
 	wg *sync.WaitGroup,
-	n, m, totalF, committeeF uint) {
+	flagArgs *FlagArgs) {
 
 	// wait untill all node connections have pushed an ID/IP to chan
 	wg.Wait()
 	close(chanToCoordinator)
 
 	// create array of structs that has all info about a node and assign it id/ip
-	nodeInfos := make([]NodeAllInfo, n)
+	nodeInfos := make([]NodeAllInfo, flagArgs.n)
 	i := 0
 	for elem := range chanToCoordinator {
 		nodeInfos[i].ID = elem.id
@@ -153,19 +158,21 @@ func coordinator(
 	rand.Shuffle(len(nodeInfos), func(i, j int) { nodeInfos[i], nodeInfos[j] = nodeInfos[j], nodeInfos[i] })
 
 	// Create committees with id
-	committees := make([]uint, m)
-	for i := uint(0); i < m; i++ {
+	committees := make([]uint, flagArgs.m)
+	for i := uint(0); i < flagArgs.m; i++ {
 		committees[i] = uint(rand.Intn(maxId))
 	}
 
+	fmt.Println("Committees: ", committees)
+
 	// divide idIdPairs into equal m chunks and assign them to the committees
-	npm := int(n / m)
-	rest := int(n % m)
+	npm := int(flagArgs.n / flagArgs.m)
+	rest := int(flagArgs.n % flagArgs.m)
 	c := 0
-	for i := int(0); i < int(n); i++ {
+	for i := int(0); i < int(flagArgs.n); i++ {
 		t_npm := npm
 		if i != 0 && i%npm == 0 {
-			if i != int(n)-rest { // if there is a rest, it will be put into the last committee
+			if i != int(flagArgs.n)-rest { // if there is a rest, it will be put into the last committee
 				c++
 			} else {
 				t_npm += rest
@@ -200,9 +207,9 @@ func coordinator(
 
 	// double check amount of nodes in each committee and their adversaries
 	lastCommittee := committees[0]
-	committeeInfos := make([]committeeInfo, m)
+	committeeInfos := make([]committeeInfo, flagArgs.m)
 	iCommittee := 0
-	for i := int(0); i < int(n); i++ {
+	for i := int(0); i < int(flagArgs.n); i++ {
 		if nodeInfos[i].CommitteeID != lastCommittee {
 			lastCommittee = nodeInfos[i].CommitteeID
 			iCommittee += 1
@@ -223,21 +230,27 @@ func coordinator(
 			log.Fatal("Number of nodes in committee not right", npm, npm+rest, committeeInfos[i].npm)
 		}
 
-		if committeeInfos[i].f >= int(math.Ceil(float64(committeeInfos[i].npm)/float64(committeeF))) {
+		if committeeInfos[i].f >= int(math.Ceil(float64(committeeInfos[i].npm)/float64(flagArgs.committeeF))) {
 			log.Fatal("Comitte %d has too many adversaries %d", committeeInfos[i].id, committeeInfos[i].f)
 		}
 
 		checkTotalF += committeeInfos[i].f
 	}
 
-	if int(n)/checkTotalF < 1/int(totalF) {
+	if flagArgs.n/flagArgs.m != 1 && int(flagArgs.n)/checkTotalF < 1/int(flagArgs.totalF) {
 		log.Fatal("There was too many adversaries in total %d", checkTotalF)
 	}
 
-	fmt.Println("Total adversary percentage: ", float64(checkTotalF)/float64(n))
+	fmt.Println("Total adversary percentage: ", float64(checkTotalF)/float64(flagArgs.n))
+
+	// gen set of idenetites
+	users := genUsers(flagArgs)
+	genesisBlock := genGenesisBlock(flagArgs, users)
 
 	rnd := rand.Intn(maxId)
-	msg := ResponseToNodes{nodeInfos, rnd}
+	msg := ResponseToNodes{nodeInfos, genesisBlock, rnd}
+	g_allNodes = nodeInfos
+	g_allNodesPopulated <- true
 
 	for _, c := range chanToNodes {
 		c <- msg
@@ -286,12 +299,15 @@ func coordinatorHandleConsensus(tag string, consensusResults *consensusResult) {
 		tmp.accepts += 1
 	}
 	(*consensusResults) = tmp
-	if v := uint((default_n/default_m)/default_committeeF) + uint(1); uint(tmp.accepts) >= v {
-		log.Println(tmp.accepts, " accepts")
-	} else if v <= uint(tmp.pending) {
-		log.Println(tmp.pending, " pendings")
-	} else if v <= uint(tmp.echos) {
-		log.Println(tmp.echos, " echos")
-	}
+	// TODO fix this to handle multiple committees
+	/*
+		if v := uint((default_n/default_m)/default_committeeF) + uint(1); uint(tmp.accepts) >= v*v {
+			log.Println(tmp.accepts, " accepts")
+		} else if v*v <= uint(tmp.pending) {
+			log.Println(tmp.pending, " pendings")
+		} else if v*v <= uint(tmp.echos) {
+			log.Println(tmp.echos, " echos")
+		}
+	*/
 
 }
