@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"sync"
 )
 
@@ -18,8 +19,13 @@ type NodeAllInfo struct {
 	IsHonest    bool
 }
 
+type PlaceHolder struct {
+	t uint
+}
+
 type ResponseToNodes struct {
 	Nodes            []NodeAllInfo
+	GensisisBlock    *Block
 	InitalRandomness int
 }
 
@@ -59,11 +65,116 @@ type AllInfo struct {
 }
 
 // block header
-type BlockHeader struct {
+type ConsensusBlockHeader struct {
 	I        uint
 	Root     [32]byte
 	LeaderID uint
 	Tag      string
+}
+
+type UTXOSet struct {
+	set map[[32]byte]*OutTx
+}
+
+func (s *UTXOSet) init() {
+	s.set = make(map[[32]byte]*OutTx)
+}
+
+type OutTx struct {
+	Value  uint // value of UTXO
+	N      uint // nonce/i in output list of tx
+	PubKey *PubKey
+}
+
+func (o *OutTx) bytes() []byte {
+	b1 := make([]byte, 8) //uint64 is 8 bytes
+	binary.LittleEndian.PutUint64(b1, uint64(o.Value))
+	b2 := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b2, uint64(o.N))
+	b3 := o.PubKey.bytes()
+	return byteSliceAppend(b1, b2, b3)
+}
+
+type InTx struct {
+	TxID [32]byte // output in transaction
+	N    uint     // nonce in output in transaction
+	Sig  Sig
+}
+
+func (i *InTx) bytes() []byte {
+	return getBytes(i)
+}
+
+type Transaction struct {
+	Hash    [32]byte // hash of inputs and outputs
+	Inputs  []InTx
+	Outputs []OutTx
+}
+
+func (t *Transaction) calculateHash() [32]byte {
+	b := []byte{}
+	for i := range t.Inputs {
+		b = append(b, t.Inputs[i].bytes()...)
+	}
+	for i := range t.Outputs {
+		b = append(b, t.Outputs[i].bytes()...)
+	}
+	return hash(b)
+}
+
+func (t *Transaction) setHash() {
+	t.Hash = t.calculateHash()
+}
+
+type ConsensusSignature struct {
+	IdaRoot   [32]byte
+	Iteration uint
+	State     string // echo, accept or pending
+	Pub       *PubKey
+	Sig       Sig // not hased
+}
+
+func (cs *ConsensusSignature) calculateHash() [32]byte {
+	b := byteSliceAppend(cs.IdaRoot[:], getBytes(cs.Iteration), []byte(cs.State), cs.Pub.bytes())
+	return hash(b)
+}
+
+type BlockHeader struct {
+	IdaRoot     [32]byte // merkle root of IDA gossip
+	Iteration   uint
+	CommitteeID [32]byte
+	LeaderID    *PubKey
+	LeaderSig   Sig //not hashed
+}
+
+func (bh *BlockHeader) calculateHash() [32]byte {
+	b := byteSliceAppend(bh.IdaRoot[:], getBytes(bh.Iteration), bh.CommitteeID[:], bh.LeaderID.bytes())
+	return hash(b)
+}
+
+type Block struct {
+	Hash         [32]byte // ID of this block
+	PreviousHash [32]byte // ID of last block
+	BlockHeader  BlockHeader
+	Signatures   []ConsensusSignature
+	Transactions []Transaction // not hashed
+	LeaderSig    Sig           // not hashed
+}
+
+func (b *Block) calculateHash() [32]byte {
+	bh := b.BlockHeader.calculateHash()
+	bts := []byte{}
+	for i := range b.Signatures {
+		sigBytes := b.Signatures[i].calculateHash()
+		sigBytes2 := sigBytes[:]
+		bts = append(bts, sigBytes2...)
+	}
+	toH := byteSliceAppend(b.PreviousHash[:], bh[:], bts)
+	return hash(toH)
+}
+
+func (b *Block) setHash() {
+	b.Hash = b.calculateHash()
 }
 
 // routing table
@@ -204,18 +315,18 @@ func (b *Blocks) getLen() uint {
 }
 
 type ConsensusMsgs struct {
-	m   map[uint]map[uint]BlockHeader // iter -> fromID -> msg
+	m   map[uint]map[uint]ConsensusBlockHeader // iter -> fromID -> msg
 	mux sync.Mutex
 }
 
 func (cMsg *ConsensusMsgs) init() {
-	cMsg.m = make(map[uint]map[uint]BlockHeader)
+	cMsg.m = make(map[uint]map[uint]ConsensusBlockHeader)
 }
 
 func (cMsg *ConsensusMsgs) initIter(i uint) {
 	cMsg.mux.Lock()
 	defer cMsg.mux.Unlock()
-	cMsg.m[i] = make(map[uint]BlockHeader)
+	cMsg.m[i] = make(map[uint]ConsensusBlockHeader)
 }
 
 func (cMsg *ConsensusMsgs) iterationExists(i uint) bool {
@@ -234,33 +345,33 @@ func (cMsg *ConsensusMsgs) blockHeaderExists(i, ID uint) bool {
 	return ok
 }
 
-func (cMsg *ConsensusMsgs) add(i, ID uint, header BlockHeader) {
+func (cMsg *ConsensusMsgs) add(i, ID uint, header ConsensusBlockHeader) {
 	cMsg.mux.Lock()
 	cMsg.m[i][ID] = header
 	cMsg.mux.Unlock()
 }
 
-func (cMsg *ConsensusMsgs) safeAdd(i, ID uint, header BlockHeader, errMsg string) {
+func (cMsg *ConsensusMsgs) safeAdd(i, ID uint, header ConsensusBlockHeader, errMsg string) {
 	cMsg.mux.Lock()
 	if cMsg.m[i] == nil {
-		cMsg.m[i] = make(map[uint]BlockHeader)
+		cMsg.m[i] = make(map[uint]ConsensusBlockHeader)
 	}
 
 	cMsg.m[i][ID] = header
 	cMsg.mux.Unlock()
 }
 
-func (cMsg *ConsensusMsgs) getBlockHeader(i, ID uint) BlockHeader {
+func (cMsg *ConsensusMsgs) getBlockHeader(i, ID uint) ConsensusBlockHeader {
 	cMsg.mux.Lock()
 	defer cMsg.mux.Unlock()
 	return cMsg.m[i][ID]
 }
 
-func (cMsg *ConsensusMsgs) getBlockHeaders(i uint) []BlockHeader {
+func (cMsg *ConsensusMsgs) getBlockHeaders(i uint) []ConsensusBlockHeader {
 	cMsg.mux.Lock()
 	defer cMsg.mux.Unlock()
 
-	blockHeaders := make([]BlockHeader, len(cMsg.m[i]))
+	blockHeaders := make([]ConsensusBlockHeader, len(cMsg.m[i]))
 	iter := 0
 	for _, v := range cMsg.m[i] {
 		blockHeaders[iter] = v

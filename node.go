@@ -251,7 +251,7 @@ func nodeHandleConnection(
 		go handleIDAGossipMsg(idaMsg, nodeCtx)
 
 	case "consensus":
-		blockHeader, ok := msg.Msg.(BlockHeader)
+		blockHeader, ok := msg.Msg.(ConsensusBlockHeader)
 		notOkErr(ok, "BlockHeader decoding")
 
 		if i := nodeCtx.i.getI(); blockHeader.I >= i {
@@ -352,7 +352,7 @@ func leader(nodeCtx *NodeCtx) {
 	time.Sleep(default_delta * time.Millisecond)
 
 	// create block header
-	header := new(BlockHeader)
+	header := new(ConsensusBlockHeader)
 	header.I = 0
 	header.Root = merkleRoot
 	header.LeaderID = nodeCtx.self.ID
@@ -367,7 +367,7 @@ func leader(nodeCtx *NodeCtx) {
 
 func handleConsensus(
 	nodeCtx *NodeCtx,
-	header BlockHeader,
+	header ConsensusBlockHeader,
 	fromID uint) {
 
 	switch header.Tag {
@@ -457,7 +457,7 @@ func handleConsensus(
 }
 
 func handleConsensusEcho(
-	header BlockHeader,
+	header ConsensusBlockHeader,
 	nodeCtx *NodeCtx) {
 
 	requiredVotes := (uint(len(nodeCtx.committee.Members)) / nodeCtx.flagArgs.committeeF) + 1
