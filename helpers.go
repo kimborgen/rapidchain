@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/gob"
 	"log"
 	"math/rand"
 )
@@ -62,4 +64,29 @@ func randIndexesWithoutReplacement(arrayLength, sampleSize int) []int {
 	}
 
 	return keys
+}
+
+func getBytes(thing interface{}) []byte {
+	// return a byte array of anyting
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(thing)
+	ifErrFatal(err, "getBytes enc")
+	return buf.Bytes()
+}
+
+func byteSliceAppend(b ...[]byte) []byte {
+	tmp := []byte{}
+	for i := 0; i < len(b); i++ {
+		tmp = append(tmp, b[i]...)
+	}
+	return tmp
+}
+
+func toByte32(b []byte) [32]byte {
+	var a [32]byte
+	for i := range a {
+		a[i] = b[i]
+	}
+	return a
 }
