@@ -189,6 +189,9 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 
 	nodeCtx.routingTable = routingTable
 
+	nodeCtx.txPool = TxPool{}
+	nodeCtx.txPool.init()
+
 	buildCurrentNeighbours(nodeCtx)
 
 	return initialRandomness

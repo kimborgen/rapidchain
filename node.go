@@ -154,8 +154,12 @@ func nodeHandleConnection(
 		// if current committe then initiate IDA-Gossip
 		if cID == nodeCtx.self.CommitteeID {
 			// ida gossip
-			log.Println("Tx recived to target committee", tMsg.Hash)
+
 			// add to tx pool
+			ok := nodeCtx.txPool.safeAdd(&tMsg)
+			if ok {
+				log.Println("Tx recived to target committee and added to txpool", tMsg.Hash)
+			}
 		} else {
 			log.Println("Tx not target committe, routing", tMsg.Hash)
 			go routeTx(nodeCtx, msg, cID)

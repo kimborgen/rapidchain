@@ -78,6 +78,68 @@ type ConsensusBlockHeader struct {
 	Tag       string
 }
 
+// Recived transactions that have not been included in a block yet
+type TxPool struct {
+	pool map[[32]byte]*Transaction // TxHash -> Transaction
+	mux  sync.Mutex
+}
+
+func (t *TxPool) init() {
+	t.pool = make(map[[32]byte]*Transaction)
+}
+
+func (t *TxPool) add(tx *Transaction) {
+	t.mux.Lock()
+	t.pool[tx.Hash] = tx
+	t.mux.Unlock()
+}
+
+func (t *TxPool) safeAdd(tx *Transaction) bool {
+	// only add if there is no transaction with same has
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	if _, ok := t.pool[tx.Hash]; ok {
+		return false
+	}
+	t.pool[tx.Hash] = tx
+	return true
+}
+
+func (t *TxPool) get(txHash [32]byte) *Transaction {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	return t.pool[txHash]
+}
+
+func (t *TxPool) remove(txHash [32]byte) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	delete(t.pool, txHash)
+}
+
+func (t *TxPool) pop(txHash [32]byte) (*Transaction, bool) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	tx, ok := t.pool[txHash]
+	if ok {
+		delete(t.pool, txHash)
+	}
+	return tx, ok
+}
+
+func (t *TxPool) popAll() []*Transaction {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	txes := make([]*Transaction, len(t.pool))
+	i := 0
+	for _, tx := range t.pool {
+		txes[i] = tx
+		i++
+	}
+	t.pool = make(map[[32]byte]*Transaction)
+	return txes
+}
+
 type UTXOSet struct {
 	set map[[32]byte]map[uint]*OutTx // TxID -> Nonce -> OutTx
 	mux sync.Mutex
@@ -541,6 +603,7 @@ type NodeCtx struct {
 	i             CurrentIteration
 	routingTable  RoutingTable
 	committeeList [][32]byte //list of all committee ids, to be replaced with reference block?
+	txPool        TxPool
 }
 
 // generic msg. typ indicates which struct to decode msg to.
