@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/big"
 	"math/rand"
+	"sort"
 )
 
 func ifErr(e interface{}, msg string) bool {
@@ -94,4 +95,11 @@ func toByte32(b []byte) [32]byte {
 
 func toBigInt(b [32]byte) *big.Int {
 	return new(big.Int).SetBytes(b[:])
+}
+
+func sortBigIntArr(a *[]*big.Int) {
+	//sort big int arr inplace
+	b := *a
+	sort.Slice(b, func(i, j int) bool { return b[i].Cmp(b[j]) < 0 })
+	a = &b
 }
