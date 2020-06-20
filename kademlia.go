@@ -6,6 +6,58 @@ import (
 	"sync"
 )
 
+// todo replace xor operations with these functions
+// todo check that the inverse property holds
+func xor(b1, b2 [32]byte) [32]byte {
+	// returns the xor distance between b1 and b2
+	dist := xorBigInt(toBigInt(b1), toBigInt(b2))
+	return toByte32(dist.Bytes())
+}
+
+func xorBigInt(b1, b2 *big.Int) *big.Int {
+	// return the xor distnace between b1 and b2 as bigint
+	return new(big.Int).Xor(b1, b2)
+}
+
+func txFindClosestCommittee(nodeCtx *NodeCtx, txHash [32]byte) [32]byte {
+	// returns the closest committee
+
+	txInt := toBigInt(txHash)
+
+	// xor all committeList with tx
+	xored := make([]*big.Int, len(nodeCtx.committeeList))
+	for i := range xored {
+		xored[i] = xorBigInt(txInt, toBigInt(nodeCtx.committeeList[i]))
+	}
+
+	//sort xored
+	sortBigIntArr(&xored)
+
+	// lowest distance is now the first elem of the sorted array
+	// xor it back with txInt to get original committee ID
+	lowest := xorBigInt(txInt, xored[0])
+
+	return toByte32(lowest.Bytes())
+}
+
+func routeTx(nodeCtx *NodeCtx, msg Msg, closestCommitteeID [32]byte) {
+	// routes tx
+	// closesCommitteID may or not be in routing table. But it is definitly not ownCommittteeID
+
+	// check if closesCommitteeID is in routing table
+	r := nodeCtx.routingTable.get()
+	for _, c := range r {
+		if c.ID == closestCommitteeID {
+			// we have it! c
+			sendMsgToCommittee(msg, &c)
+			return
+		}
+	}
+
+	// closestCommitteeID is not in routing table. Therefor iniate routing
+	findNodeAndSend(nodeCtx, closestCommitteeID, msg)
+}
+
 func findClosestsCommittee(nodeCtx *NodeCtx, committeeIDbytes [32]byte) Committee {
 	// convert to big ints to be able to do bitwise xor operations
 	selfCommitteeID := new(big.Int)

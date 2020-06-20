@@ -243,7 +243,7 @@ func coordinator(
 	genesisBlock := genGenesisBlock(flagArgs, users)
 
 	rnd := rand.Intn(maxId)
-	msg := ResponseToNodes{nodeInfos, genesisBlock, rnd}
+	msg := ResponseToNodes{nodeInfos, genesisBlock, nodeInfos[0].Pub.Bytes, rnd}
 
 	for _, c := range chanToNodes {
 		c <- msg
@@ -275,11 +275,13 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 }
 
 func coordinatorHandleIDASuccess(root [32]byte, successfullGossips *map[[32]byte]int) {
-	(*successfullGossips)[root] += 1
-	if (*successfullGossips)[root] >= int(default_n/default_m) {
-		// this is not perfect, but it will atleast show if all nodes recived a successfull ida msg
-		log.Println("IDAGossip success for root ", root, "with ", (*successfullGossips)[root], " nodes succesfull")
-	}
+	/*
+		(*successfullGossips)[root] += 1
+		if (*successfullGossips)[root] >= int(default_n/default_m) {
+			// this is not perfect, but it will atleast show if all nodes recived a successfull ida msg
+			log.Println("IDAGossip success for root ", root, "with ", (*successfullGossips)[root], " nodes succesfull")
+		}
+	*/
 }
 
 func coordinatorHandleConsensus(tag string, consensusResults *consensusResult) {

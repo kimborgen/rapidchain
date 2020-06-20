@@ -18,6 +18,7 @@ type SelfInfo struct {
 	CommitteeID [32]byte
 	IP          string
 	IsHonest    bool
+	Debug       bool
 }
 
 type NodeAllInfo struct {
@@ -34,6 +35,7 @@ type PlaceHolder struct {
 type ResponseToNodes struct {
 	Nodes            []NodeAllInfo
 	GensisisBlock    *Block
+	DebugNode        [32]byte
 	InitalRandomness int
 }
 
@@ -528,16 +530,17 @@ func (c *CurrentIteration) getI() uint {
 // context for a node, to be passed everywhere, acts like a global var
 type NodeCtx struct {
 	flagArgs      FlagArgs
-	committee     Committee
-	neighbors     [][32]byte
+	committee     Committee  // current committee
+	neighbors     [][32]byte // neighboring nodes
 	self          SelfInfo
-	allInfo       map[[32]byte]NodeAllInfo
+	allInfo       map[[32]byte]NodeAllInfo // cheat variable for easy testing
 	idaMsgs       IdaMsgs
 	blocks        Blocks
 	consensusMsgs ConsensusMsgs
 	channels      Channels
 	i             CurrentIteration
 	routingTable  RoutingTable
+	committeeList [][32]byte //list of all committee ids, to be replaced with reference block?
 }
 
 // generic msg. typ indicates which struct to decode msg to.

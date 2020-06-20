@@ -25,6 +25,9 @@ func launchNode(flagArgs *FlagArgs) {
 	initialRandomness = initialRandomness
 	// launch listener
 	go listen(listener, nodeCtx)
+	if nodeCtx.self.Debug {
+		go debug(nodeCtx)
+	}
 
 	// launch leader election protocol
 	var leaderPub *PubKey = leaderElection(nodeCtx)
@@ -35,7 +38,9 @@ func launchNode(flagArgs *FlagArgs) {
 	if leaderPub.Bytes == nodeCtx.self.Priv.Pub.Bytes {
 		//fmt.Println("\n\n\n", nodeCtx.routingTable, "\n\n\n")
 
-		leader(nodeCtx)
+		// test bytes/big.Int xoring
+
+		// leader(nodeCtx)
 
 		/*
 			time.Sleep(3 * time.Second)
@@ -67,6 +72,22 @@ func launchNode(flagArgs *FlagArgs) {
 	// blocker
 	for {
 	}
+}
+
+func debug(nodeCtx *NodeCtx) {
+	// this will only run if you are the debug node
+
+	time.Sleep(2 * time.Second)
+	fmt.Println("\n\n")
+	b1 := hash([]byte("lol dette er string"))
+	//b2 := hash([]byte("Hvorfor er jeg ikke ute å drikker nå"))
+	closest := txFindClosestCommittee(nodeCtx, b1)
+
+	fmt.Println(nodeCtx.committeeList)
+
+	fmt.Println("\n", closest)
+
+	fmt.Println("\n\n")
 }
 
 func listen(
@@ -122,6 +143,23 @@ func nodeHandleConnection(
 		}
 
 		handleFindNode(nodeCtx, conn, kMsg)
+	case "transaction":
+		// recived a transaction
+
+		tMsg, ok := msg.Msg.(Transaction)
+		notOkErr(ok, "transaction decoding") //todo dont need such strict err
+		// figure out which committee the transaction belongs to
+		cID := txFindClosestCommittee(nodeCtx, tMsg.Hash)
+
+		// if current committe then initiate IDA-Gossip
+		if cID == nodeCtx.self.CommitteeID {
+			// ida gossip
+			log.Println("Tx recived to target committee", tMsg.Hash)
+			// add to tx pool
+		} else {
+			log.Println("Tx not target committe, routing", tMsg.Hash)
+			go routeTx(nodeCtx, msg, cID)
+		}
 
 	default:
 		log.Fatal("[Error] no known message type")

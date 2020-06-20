@@ -50,6 +50,10 @@ func genGenesisBlock(flagArgs *FlagArgs, users *[]PrivKey) *Block {
 func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlock *Block) {
 	// Emulates users by continously generating transactions
 
+	if flagArgs.tps == 0 {
+		return
+	}
+
 	// generate and send transaction loop
 	set := new(UTXOSet)
 	set.init()
@@ -70,11 +74,17 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 		userSets[outputs[i].PubKey.Bytes].add(genTxHash, &outputs[i])
 	}
 
+	i := 0
+	time.Sleep(3 * time.Second)
 	for {
+		if i > 3 {
+			return
+		}
 		go _txGenerator(flagArgs, &allNodes, users, set, &userSets)
 		dur := time.Second / time.Duration(flagArgs.tps)
 		// fmt.Println("Sleeping for ", dur)
 		time.Sleep(dur)
+		i++
 	}
 }
 

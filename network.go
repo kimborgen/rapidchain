@@ -28,3 +28,9 @@ func reciveMsg(conn net.Conn, obj interface{}) {
 	err := dec.Decode(obj)
 	ifErrFatal(err, "decoding")
 }
+
+func sendMsgToCommittee(msg Msg, currentCommittee *Committee) {
+	for _, v := range (*currentCommittee).Members {
+		go dialAndSend(v.IP, msg)
+	}
+}

@@ -41,6 +41,11 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 	selfInfo.CommitteeID = allInfo[privKey.Pub.Bytes].CommitteeID
 	selfInfo.IP = allInfo[privKey.Pub.Bytes].IP
 	selfInfo.IsHonest = allInfo[privKey.Pub.Bytes].IsHonest
+	if response.DebugNode == selfInfo.Priv.Pub.Bytes {
+		selfInfo.Debug = true
+	} else {
+		selfInfo.Debug = false
+	}
 
 	// delete self from allInfo
 	delete(allInfo, privKey.Pub.Bytes)
@@ -77,6 +82,17 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 		}
 		committees[node.CommitteeID] = true
 	}
+
+	// generate committeeList with own committee
+	committeeList := make([][32]byte, len(committees)+1)
+	committeeList[0] = selfInfo.CommitteeID
+
+	iC := 1
+	for k := range committees {
+		committeeList[iC] = k
+		iC++
+	}
+	nodeCtx.committeeList = committeeList
 
 	selfCommitteeID := new(big.Int).SetBytes(selfInfo.CommitteeID[:])
 
