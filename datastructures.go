@@ -77,11 +77,120 @@ type ConsensusBlockHeader struct {
 }
 
 type UTXOSet struct {
-	set map[[32]byte]*OutTx
+	set map[[32]byte]map[uint]*OutTx // TxID -> Nonce -> OutTx
+	mux sync.Mutex
 }
 
 func (s *UTXOSet) init() {
-	s.set = make(map[[32]byte]*OutTx)
+	s.set = make(map[[32]byte]map[uint]*OutTx)
+}
+
+func (s *UTXOSet) add(k [32]byte, oTx *OutTx) {
+	s.mux.Lock()
+	if len(s.set[k]) == 0 {
+		s.set[k] = make(map[uint]*OutTx)
+	}
+	s.set[k][oTx.N] = oTx
+	s.mux.Unlock()
+}
+
+func (s *UTXOSet) removeOutput(k [32]byte, N uint) {
+	s.mux.Lock()
+	delete(s.set[k], N)
+	if len(s.set[k]) == 0 {
+		delete(s.set, k)
+	}
+	s.mux.Unlock()
+}
+
+func (s *UTXOSet) get(k [32]byte, N uint) *OutTx {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	if len(s.set[k]) == 0 {
+		return nil
+	}
+	return s.set[k][N]
+}
+
+func (s *UTXOSet) getAndRemove(k [32]byte, N uint) *OutTx {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	if len(s.set[k]) == 0 {
+		return nil
+	}
+	ret := s.set[k][N]
+	delete(s.set[k], N)
+	if len(s.set[k]) == 0 {
+		delete(s.set, k)
+	}
+	return ret
+}
+
+func (s *UTXOSet) getTxOutputsAsList(k [32]byte) *[]*OutTx {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	if len(s.set[k]) == 0 {
+		return nil
+	}
+	a := make([]*OutTx, len(s.set[k]))
+	i := 0
+	for _, v := range s.set[k] {
+		a[i] = v
+	}
+	return &a
+}
+
+func (s *UTXOSet) getLenOfEntireSet() int {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	l := 0
+	for k := range s.set {
+		l += len(s.set[k])
+	}
+	return l
+}
+
+type txIDNonceTuple struct {
+	txID [32]byte
+	n    uint
+}
+
+func (s *UTXOSet) totalValue() uint {
+	// finds the total value that is in the UTXO set, usefull for each user to know their balance
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	var tot uint = 0
+	for txID := range s.set {
+		for nonce := range s.set[txID] {
+			tot += s.set[txID][nonce].Value
+		}
+	}
+	return tot
+}
+
+// only to be used if you own all UTXO's
+func (s *UTXOSet) getOutputsToFillValue(value uint) (*[]txIDNonceTuple, bool) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	res := []txIDNonceTuple{}
+	var remV int = int(value)
+	for txID := range s.set {
+		for nonce := range s.set[txID] {
+			v := s.set[txID][nonce].Value
+			remV -= int(v)
+			if remV > 0 {
+				// take entire output
+				res = append(res, txIDNonceTuple{txID, nonce})
+			} else {
+				// take only the required amount
+				res = append(res, txIDNonceTuple{txID, nonce})
+				return &res, true
+			}
+		}
+	}
+	// did not find enough outputs to fill value
+	return &res, false
 }
 
 type OutTx struct {
@@ -102,7 +211,7 @@ func (o *OutTx) bytes() []byte {
 type InTx struct {
 	TxID [32]byte // output in transaction
 	N    uint     // nonce in output in transaction
-	Sig  Sig
+	Sig  *Sig
 }
 
 func (i *InTx) bytes() []byte {
@@ -113,6 +222,7 @@ type Transaction struct {
 	Hash    [32]byte // hash of inputs and outputs
 	Inputs  []InTx
 	Outputs []OutTx
+	Sig     *Sig // sig of hash
 }
 
 func (t *Transaction) calculateHash() [32]byte {
