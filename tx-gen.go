@@ -22,7 +22,7 @@ func genGenesisBlock(flagArgs *FlagArgs, users *[]PrivKey) *Block {
 		tx := OutTx{}
 		tx.Value = per
 		tx.N = uint(i)
-		tx.PubKey = u.pub()
+		tx.PubKey = u.Pub
 		genesisTx.Outputs[i] = tx
 	}
 	genesisTx.setHash()

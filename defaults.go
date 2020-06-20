@@ -6,8 +6,8 @@ import "math"
 
 const default_function string = "node"
 const default_vCPUs uint = 1
-const default_instances uint = 30
-const default_n uint = 30
+const default_instances uint = 40
+const default_n uint = 40
 const default_m uint = 10 // number of comimttees
 const default_totalF uint = 3
 const default_committeeF uint = 2

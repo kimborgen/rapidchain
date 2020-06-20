@@ -13,10 +13,12 @@ var eCurve elliptic.Curve = elliptic.P256()
 
 type PrivKey struct {
 	Priv *ecdsa.PrivateKey
+	Pub  *PubKey
 }
 
 type PubKey struct {
-	Pub *ecdsa.PublicKey
+	Pub   *ecdsa.PublicKey
+	Bytes [32]byte // hash of x.bytes | y.bytes
 }
 
 type Sig struct {
@@ -28,6 +30,10 @@ func (k *PrivKey) gen() {
 	privKey, err := ecdsa.GenerateKey(eCurve, rand.Reader)
 	ifErrFatal(err, "ecdsa genkey")
 	k.Priv = privKey
+	k.Pub = &PubKey{}
+	k.Pub.Pub = &k.Priv.PublicKey
+
+	k.Pub.init()
 }
 
 func (k *PrivKey) sign(hashedMsg []byte) *Sig {
@@ -36,18 +42,24 @@ func (k *PrivKey) sign(hashedMsg []byte) *Sig {
 	return &Sig{r, s}
 }
 
-func (k *PrivKey) pub() *PubKey {
-	return &PubKey{&k.Priv.PublicKey}
+func (k *PubKey) init() {
+	b := k.xyBytes()
+	k.Bytes = hash(b[:])
 }
 
 func (k *PubKey) verify(hashedMsg []byte, sig *Sig) bool {
 	return verify(k.Pub, hashedMsg, sig)
 }
 
-func (k *PubKey) bytes() []byte {
-	x := getBytes(k.Pub.X)
-	y := getBytes(k.Pub.Y)
-	return byteSliceAppend(x, y)
+func (k *PubKey) xyBytes() [64]byte {
+	x := k.Pub.X.Bytes()
+	y := k.Pub.Y.Bytes()
+	b := byteSliceAppend(x, y)
+	var bb [64]byte
+	for i := range b {
+		bb[i] = b[i]
+	}
+	return bb
 }
 
 func verify(pubKey *ecdsa.PublicKey, hashedMsg []byte, sig *Sig) bool {

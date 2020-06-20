@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"log"
+	"math/big"
 	"math/rand"
 )
 
@@ -89,4 +90,8 @@ func toByte32(b []byte) [32]byte {
 		a[i] = b[i]
 	}
 	return a
+}
+
+func toBigInt(b [32]byte) *big.Int {
+	return new(big.Int).SetBytes(b[:])
 }

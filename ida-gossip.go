@@ -94,7 +94,7 @@ func IDAGossip(nodeCtx *NodeCtx, block []byte) [32]byte {
 		//fmt.Println("\n\n", chunks)
 		total_chunks += len(chunks)
 		proofs := proofs[i : i+chunksToEach]
-		msgs[ii] = Msg{"IDAGossipMsg", IDAGossipMsg{chunks, proofs, root32}, nodeCtx.self.ID}
+		msgs[ii] = Msg{"IDAGossipMsg", IDAGossipMsg{chunks, proofs, root32}, nodeCtx.self.Priv.Pub}
 		ii += 1
 	}
 	log.Println("Creating: Len of chunks ", total_chunks, chunksToEach, len(msgs))
@@ -201,7 +201,7 @@ func handleIDAGossipMsg(
 				log.Println("Message succesfully recreated and added")
 
 				// send success message to coordinator
-				msg := Msg{"IDASuccess", idaMsg.MerkleRoot, nodeCtx.self.ID}
+				msg := Msg{"IDASuccess", idaMsg.MerkleRoot, nodeCtx.self.Priv.Pub}
 				go dialAndSend("127.0.0.1:8080", msg)
 				go gossipSend(idaMsg, nodeCtx)
 
@@ -221,7 +221,7 @@ func gossipSend(msg IDAGossipMsg, nodeCtx *NodeCtx) {
 	msgs := make([]Msg, len(nodeCtx.neighbors))
 
 	for i := range msgs {
-		msgs[i] = Msg{"IDAGossipMsg", msg, nodeCtx.self.ID}
+		msgs[i] = Msg{"IDAGossipMsg", msg, nodeCtx.self.Priv.Pub}
 	}
 
 	// send each msg to node

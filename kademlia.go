@@ -1,40 +1,53 @@
 package main
 
 import (
-	"fmt"
+	"math/big"
 	"net"
 	"sync"
 )
 
-func findClosestsCommittee(nodeCtx *NodeCtx, committeeID uint) Committee {
-	xored := nodeCtx.self.CommitteeID ^ committeeID
+func findClosestsCommittee(nodeCtx *NodeCtx, committeeIDbytes [32]byte) Committee {
+	// convert to big ints to be able to do bitwise xor operations
+	selfCommitteeID := new(big.Int)
+	selfCommitteeID.SetBytes(nodeCtx.self.CommitteeID[:])
+	committeeID := new(big.Int)
+	committeeID.SetBytes(committeeIDbytes[:])
+
+	xored := new(big.Int).Xor(selfCommitteeID, committeeID)
 	r := nodeCtx.routingTable.get()
 	var closest int = 0
 	// it can't be less the first entry in our routing table since that is our closest neighbor
 	for i := range r {
 		// fmt.Println(nodeCtx.self.CommitteeID, committeeID, r)
-		curr := nodeCtx.self.CommitteeID ^ r[i].ID
+		curr := new(big.Int).Xor(selfCommitteeID, r[i].BigIntID)
+
 		if i == len(r)-1 {
 			// there is no i+1 so break
-			if curr > xored {
+			// curr > xored
+			if curr.Cmp(xored) > 0 {
 				//fmt.Println(i, len(r), curr, xored)
 				errFatal(nil, "what2 findNode")
-			} else if curr == xored {
+			} else if curr.Cmp(xored) == 0 {
 				errFatal(nil, "2: got committteID that was in routing table")
 			}
 			// the closest node is the one furthes away in our routing table
 			closest = i
 			break
 		}
-		next := nodeCtx.self.CommitteeID ^ r[i+1].ID
+		next := new(big.Int).Xor(selfCommitteeID, r[i+1].BigIntID)
 
-		if xored == curr || xored == next {
+		if xored.Cmp(curr) == 0 || xored.Cmp(next) == 0 {
 			errFatal(nil, "got a committeID that was in routing table")
 		}
-		if curr < xored {
-			if xored < next {
+
+		// curr < xored
+		if curr.Cmp(xored) < 0 {
+			if xored.Cmp(next) < 0 { //xored < next
 				// find out which of them is closer.
-				if xored-curr < next-xored {
+				xMinC := new(big.Int).Sub(xored, curr)
+				nMinX := new(big.Int).Sub(next, xored)
+				// if xored-curr < next-xored {
+				if xMinC.Cmp(nMinX) < 0 {
 					closest = i
 				} else {
 					closest = i + 1
@@ -50,7 +63,7 @@ func findClosestsCommittee(nodeCtx *NodeCtx, committeeID uint) Committee {
 	return r[closest]
 }
 
-func findNodeAndSend(nodeCtx *NodeCtx, commiteeID uint, msg interface{}) {
+func findNodeAndSend(nodeCtx *NodeCtx, commiteeID [32]byte, msg interface{}) {
 	c := findNode(nodeCtx, commiteeID)
 
 	for _, v := range c.Members {
@@ -58,7 +71,7 @@ func findNodeAndSend(nodeCtx *NodeCtx, commiteeID uint, msg interface{}) {
 	}
 }
 
-func findNode(nodeCtx *NodeCtx, committeeID uint) Committee {
+func findNode(nodeCtx *NodeCtx, committeeID [32]byte) Committee {
 	// given that committeeID is not in our routing table, then send findNode request to closests committe to committeeID
 
 	c := findClosestsCommittee(nodeCtx, committeeID)
@@ -71,10 +84,10 @@ func findNode(nodeCtx *NodeCtx, committeeID uint) Committee {
 	return recursiveFindNode(nodeCtx, committeeID, c)
 }
 
-func recursiveFindNode(nodeCtx *NodeCtx, committeeID uint, nCommittee Committee) Committee {
+func recursiveFindNode(nodeCtx *NodeCtx, committeeID [32]byte, nCommittee Committee) Committee {
 	// construct findNode message and send it.
 	findNodeMsg := KademliaFindNodeMsg{committeeID}
-	msg := Msg{"find_node", findNodeMsg, nodeCtx.self.ID}
+	msg := Msg{"find_node", findNodeMsg, nodeCtx.self.Priv.Pub}
 	var wg sync.WaitGroup
 	responses := make(chan KademliaFindNodeResponse, len(nCommittee.Members))
 	for _, m := range nCommittee.Members {
@@ -144,7 +157,7 @@ func recursiveFindNode(nodeCtx *NodeCtx, committeeID uint, nCommittee Committee)
 	return recursiveFindNode(nodeCtx, committeeID, newC)
 }
 
-func aggregateResponses(resp []KademliaFindNodeResponse, ID uint) Committee {
+func aggregateResponses(resp []KademliaFindNodeResponse, ID [32]byte) Committee {
 	c := Committee{}
 	c.init(ID)
 	for _, r := range resp {
@@ -157,9 +170,6 @@ func aggregateResponses(resp []KademliaFindNodeResponse, ID uint) Committee {
 
 func handleFindNode(nodeCtx *NodeCtx, conn net.Conn, msg KademliaFindNodeMsg) {
 	c := _handleFindNode(nodeCtx, msg)
-	if c.ID == 0 {
-		fmt.Println("HMMMMM", c, msg)
-	}
 	response := KademliaFindNodeResponse{}
 	response.Committee = c
 	sendMsg(conn, response)

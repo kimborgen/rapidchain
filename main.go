@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"encoding/gob"
 	"flag"
 )
@@ -39,12 +41,21 @@ func main() {
 	flagArgs.totalCoins = *totalCointsPtr
 	flagArgs.tps = *tpsPtr
 
+	// generate a random key to send the P256 curve interface to gob.Register because it wouldnt cooperate
+	randomKey := new(PrivKey)
+	randomKey.gen()
+
 	// register structs with gob
 	gob.Register(IDAGossipMsg{})
 	gob.Register([32]uint8{})
 	gob.Register(BlockHeader{})
 	gob.Register(KademliaFindNodeMsg{})
 	gob.Register(KademliaFindNodeResponse{})
+	gob.Register(elliptic.CurveParams{})
+	gob.Register(ecdsa.PublicKey{})
+	gob.Register(PubKey{})
+	gob.Register(randomKey.Pub.Pub.Curve)
+	gob.Register(ConsensusBlockHeader{})
 
 	if *functionPtr == "coordinator" {
 		launchCoordinator(&flagArgs)

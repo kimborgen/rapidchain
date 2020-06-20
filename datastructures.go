@@ -2,19 +2,27 @@ package main
 
 import (
 	"encoding/binary"
+	"math/big"
 	"sync"
 )
 
 // only data structures that are common in multiple, disjoint files, should belong here
 
 type Node_InitialMessageToCoordinator struct {
-	ID   uint
+	Pub  *PubKey
 	Port int
 }
 
+type SelfInfo struct {
+	Priv        *PrivKey
+	CommitteeID [32]byte
+	IP          string
+	IsHonest    bool
+}
+
 type NodeAllInfo struct {
-	ID          uint
-	CommitteeID uint
+	Pub         *PubKey
+	CommitteeID [32]byte
 	IP          string
 	IsHonest    bool
 }
@@ -31,45 +39,41 @@ type ResponseToNodes struct {
 
 // Representation of a member beloning to the current committee of a node
 type CommitteeMember struct {
-	ID uint
-	IP string
+	Pub *PubKey
+	IP  string
 }
 
 // Representation of a committee from the point of view of a node
 type Committee struct {
-	ID      uint
-	Members map[uint]CommitteeMember
+	ID       [32]byte
+	BigIntID *big.Int
+	Members  map[[32]byte]CommitteeMember
 }
 
-func (c *Committee) init(ID uint) {
+func (c *Committee) init(ID [32]byte) {
 	c.ID = ID
-	c.Members = make(map[uint]CommitteeMember)
+	c.BigIntID = new(big.Int).SetBytes(ID[:])
+	c.Members = make(map[[32]byte]CommitteeMember)
 }
 
 func (c *Committee) addMember(m CommitteeMember) {
-	c.Members[m.ID] = m
+	c.Members[m.Pub.Bytes] = m
 }
 
 func (c *Committee) safeAddMember(m CommitteeMember) bool {
-	if _, ok := c.Members[m.ID]; !ok {
+	if _, ok := c.Members[m.Pub.Bytes]; !ok {
 		return false
 	}
 	c.addMember(m)
 	return true
 }
 
-// Cheat data to know all nodes in the system
-type AllInfo struct {
-	self  NodeAllInfo
-	nodes map[uint]NodeAllInfo
-}
-
 // block header
 type ConsensusBlockHeader struct {
-	I        uint
-	Root     [32]byte
-	LeaderID uint
-	Tag      string
+	I         uint
+	Root      [32]byte
+	LeaderPub *PubKey
+	Tag       string
 }
 
 type UTXOSet struct {
@@ -91,8 +95,8 @@ func (o *OutTx) bytes() []byte {
 	binary.LittleEndian.PutUint64(b1, uint64(o.Value))
 	b2 := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b2, uint64(o.N))
-	b3 := o.PubKey.bytes()
-	return byteSliceAppend(b1, b2, b3)
+	b3 := o.PubKey.Bytes
+	return byteSliceAppend(b1, b2, b3[:])
 }
 
 type InTx struct {
@@ -135,7 +139,7 @@ type ConsensusSignature struct {
 }
 
 func (cs *ConsensusSignature) calculateHash() [32]byte {
-	b := byteSliceAppend(cs.IdaRoot[:], getBytes(cs.Iteration), []byte(cs.State), cs.Pub.bytes())
+	b := byteSliceAppend(cs.IdaRoot[:], getBytes(cs.Iteration), []byte(cs.State), cs.Pub.Bytes[:])
 	return hash(b)
 }
 
@@ -143,12 +147,12 @@ type BlockHeader struct {
 	IdaRoot     [32]byte // merkle root of IDA gossip
 	Iteration   uint
 	CommitteeID [32]byte
-	LeaderID    *PubKey
+	LeaderPub   *PubKey
 	LeaderSig   Sig //not hashed
 }
 
 func (bh *BlockHeader) calculateHash() [32]byte {
-	b := byteSliceAppend(bh.IdaRoot[:], getBytes(bh.Iteration), bh.CommitteeID[:], bh.LeaderID.bytes())
+	b := byteSliceAppend(bh.IdaRoot[:], getBytes(bh.Iteration), bh.CommitteeID[:], bh.LeaderPub.Bytes[:])
 	return hash(b)
 }
 
@@ -189,16 +193,16 @@ func (r *RoutingTable) init(length int) {
 	r.mux.Unlock()
 }
 
-func (r *RoutingTable) addCommittee(i, ID uint) {
+func (r *RoutingTable) addCommittee(i uint, ID [32]byte) {
 	r.mux.Lock()
-	r.l[i] = Committee{ID: ID}
-	r.l[i].Members = make(map[uint]CommitteeMember)
+	r.l[i] = Committee{}
+	r.l[i].init(ID)
 	r.mux.Unlock()
 }
 
 func (r *RoutingTable) addMember(i uint, cm CommitteeMember) {
 	r.mux.Lock()
-	r.l[i].Members[cm.ID] = cm
+	r.l[i].addMember(cm)
 	r.mux.Unlock()
 }
 
@@ -209,7 +213,7 @@ func (r *RoutingTable) get() []Committee {
 }
 
 type KademliaFindNodeMsg struct {
-	ID uint
+	ID [32]byte
 }
 
 type KademliaFindNodeResponse struct {
@@ -315,18 +319,18 @@ func (b *Blocks) getLen() uint {
 }
 
 type ConsensusMsgs struct {
-	m   map[uint]map[uint]ConsensusBlockHeader // iter -> fromID -> msg
+	m   map[uint]map[[32]byte]ConsensusBlockHeader // iter -> fromID -> msg
 	mux sync.Mutex
 }
 
 func (cMsg *ConsensusMsgs) init() {
-	cMsg.m = make(map[uint]map[uint]ConsensusBlockHeader)
+	cMsg.m = make(map[uint]map[[32]byte]ConsensusBlockHeader)
 }
 
 func (cMsg *ConsensusMsgs) initIter(i uint) {
 	cMsg.mux.Lock()
 	defer cMsg.mux.Unlock()
-	cMsg.m[i] = make(map[uint]ConsensusBlockHeader)
+	cMsg.m[i] = make(map[[32]byte]ConsensusBlockHeader)
 }
 
 func (cMsg *ConsensusMsgs) iterationExists(i uint) bool {
@@ -338,30 +342,30 @@ func (cMsg *ConsensusMsgs) iterationExists(i uint) bool {
 	return false
 }
 
-func (cMsg *ConsensusMsgs) blockHeaderExists(i, ID uint) bool {
+func (cMsg *ConsensusMsgs) blockHeaderExists(i uint, ID [32]byte) bool {
 	cMsg.mux.Lock()
 	defer cMsg.mux.Unlock()
 	_, ok := cMsg.m[i][ID]
 	return ok
 }
 
-func (cMsg *ConsensusMsgs) add(i, ID uint, header ConsensusBlockHeader) {
+func (cMsg *ConsensusMsgs) add(i uint, ID [32]byte, header ConsensusBlockHeader) {
 	cMsg.mux.Lock()
 	cMsg.m[i][ID] = header
 	cMsg.mux.Unlock()
 }
 
-func (cMsg *ConsensusMsgs) safeAdd(i, ID uint, header ConsensusBlockHeader, errMsg string) {
+func (cMsg *ConsensusMsgs) safeAdd(i uint, ID [32]byte, header ConsensusBlockHeader, errMsg string) {
 	cMsg.mux.Lock()
 	if cMsg.m[i] == nil {
-		cMsg.m[i] = make(map[uint]ConsensusBlockHeader)
+		cMsg.m[i] = make(map[[32]byte]ConsensusBlockHeader)
 	}
 
 	cMsg.m[i][ID] = header
 	cMsg.mux.Unlock()
 }
 
-func (cMsg *ConsensusMsgs) getBlockHeader(i, ID uint) ConsensusBlockHeader {
+func (cMsg *ConsensusMsgs) getBlockHeader(i uint, ID [32]byte) ConsensusBlockHeader {
 	cMsg.mux.Lock()
 	defer cMsg.mux.Unlock()
 	return cMsg.m[i][ID]
@@ -415,9 +419,9 @@ func (c *CurrentIteration) getI() uint {
 type NodeCtx struct {
 	flagArgs      FlagArgs
 	committee     Committee
-	neighbors     []uint
-	self          NodeAllInfo
-	allInfo       AllInfo
+	neighbors     [][32]byte
+	self          SelfInfo
+	allInfo       map[[32]byte]NodeAllInfo
 	idaMsgs       IdaMsgs
 	blocks        Blocks
 	consensusMsgs ConsensusMsgs
@@ -428,7 +432,7 @@ type NodeCtx struct {
 
 // generic msg. typ indicates which struct to decode msg to.
 type Msg struct {
-	Typ    string
-	Msg    interface{}
-	FromID uint // TODO add signature aswell
+	Typ     string
+	Msg     interface{}
+	FromPub *PubKey
 }

@@ -3,10 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"net"
-	"sort"
 	"time"
 )
 
@@ -18,207 +16,57 @@ func launchNode(flagArgs *FlagArgs) {
 	listener, err := net.Listen("tcp", ":0")
 	ifErrFatal(err, "listener node")
 	portNumber := listener.Addr().(*net.TCPAddr).Port
-	allInfo, initialRandomness, currentCommittee, routingTable := coordinatorSetup(conn, portNumber, flagArgs)
-	initialRandomness = initialRandomness
-	//fmt.Print(allInfo, initialRandomness, currentCommittee, "\n\n")
 
-	// Build neighbour list
-	currentNeighbours := buildCurrentNeighbours(flagArgs.d, &currentCommittee, allInfo.self.ID)
+	//fmt.Print(allInfo, initialRandomness, currentCommittee, "\n\n")
 
 	nodeCtx := new(NodeCtx)
 	nodeCtx.flagArgs = *flagArgs
-	nodeCtx.committee = currentCommittee
-	nodeCtx.neighbors = currentNeighbours
-	nodeCtx.self = allInfo.self
-	nodeCtx.allInfo = allInfo
-
-	nodeCtx.idaMsgs = IdaMsgs{}
-	nodeCtx.idaMsgs.init()
-
-	nodeCtx.blocks = Blocks{}
-	nodeCtx.blocks.init()
-
-	nodeCtx.consensusMsgs = ConsensusMsgs{}
-	nodeCtx.consensusMsgs.init()
-
-	nodeCtx.channels = Channels{}
-	nodeCtx.channels.init(len(currentCommittee.Members))
-
-	nodeCtx.i = CurrentIteration{}
-
-	nodeCtx.routingTable = routingTable
-
+	initialRandomness := coordinatorSetup(conn, portNumber, nodeCtx)
+	initialRandomness = initialRandomness
 	// launch listener
 	go listen(listener, nodeCtx)
 
 	// launch leader election protocol
-	var leaderID uint = leaderElection(&currentCommittee)
+	var leaderPub *PubKey = leaderElection(nodeCtx)
+
+	fmt.Printf("Own: %x, leader: %x\n", nodeCtx.self.Priv.Pub.Bytes, leaderPub.Bytes)
 
 	// If this node is leader then initate ida-gossip
-	if leaderID == allInfo.self.ID {
+	if leaderPub.Bytes == nodeCtx.self.Priv.Pub.Bytes {
 		//fmt.Println("\n\n\n", nodeCtx.routingTable, "\n\n\n")
 
-		// leader(nodeCtx)
+		leader(nodeCtx)
 
-		time.Sleep(3 * time.Second)
-		// fmt.Println("\n\n", nodeCtx.self.CommitteeID, "\n", nodeCtx.routingTable, "\n\n")
-		// find a committee that is not in routing table
-		for _, n := range allInfo.nodes {
-			var isIn bool = false
-			if n.CommitteeID == nodeCtx.self.CommitteeID {
-				isIn = true
-			} else {
-				for _, c := range nodeCtx.routingTable.l {
-					if n.CommitteeID == c.ID {
-						isIn = true
-						break
+		/*
+			time.Sleep(3 * time.Second)
+			// fmt.Println("\n\n", nodeCtx.self.CommitteeID, "\n", nodeCtx.routingTable, "\n\n")
+			// find a committee that is not in routing table
+			for _, n := range nodeCtx.allInfo {
+				var isIn bool = false
+				if n.CommitteeID == nodeCtx.self.CommitteeID {
+					isIn = true
+				} else {
+					for _, c := range nodeCtx.routingTable.l {
+						if n.CommitteeID == c.ID {
+							isIn = true
+							break
+						}
 					}
 				}
+				if isIn {
+					continue
+				}
+				// fmt.Println("\n\n\n", nodeCtx.self.CommitteeID, n.CommitteeID, "\n\n\n")
+				c := findNode(nodeCtx, n.CommitteeID)
+				log.Println("Found committee! ", c)
+				break
 			}
-			if isIn {
-				continue
-			}
-			// fmt.Println("\n\n\n", nodeCtx.self.CommitteeID, n.CommitteeID, "\n\n\n")
-			c := findNode(nodeCtx, n.CommitteeID)
-			log.Println("Found committee! ", c)
-			break
-		}
+		*/
 	}
 
 	// blocker
 	for {
 	}
-}
-
-func coordinatorSetup(conn net.Conn, portNumber int, flagArgs *FlagArgs) (AllInfo, int, Committee, RoutingTable) {
-	// setup with the help of coordinator
-
-	// create a random ID
-	ID := uint(rand.Intn(maxId))
-	msg := Node_InitialMessageToCoordinator{ID, portNumber}
-	sendMsg(conn, msg)
-
-	// fmt.Printf("%d Waiting for return message\n", ID)
-
-	response := new(ResponseToNodes)
-	reciveMsg(conn, response)
-
-	// declare variables to return
-	var allInfo AllInfo
-	var initialRandomness int
-	var currentCommittee Committee
-	var routingTable RoutingTable
-
-	allInfo.nodes = make(map[uint]NodeAllInfo)
-	for _, elem := range response.Nodes {
-		allInfo.nodes[elem.ID] = elem
-	}
-	allInfo.self = allInfo.nodes[ID]
-
-	initialRandomness = response.InitalRandomness
-
-	// create current commitee info
-	currentCommittee.ID = allInfo.self.CommitteeID
-	currentCommittee.Members = make(map[uint]CommitteeMember) // initialize map
-
-	for k, v := range allInfo.nodes {
-		if v.CommitteeID == currentCommittee.ID {
-			// fmt.Println("\nk: ", k, " v: ", v)
-			currentCommittee.Members[k] = CommitteeMember{v.ID, v.IP}
-		}
-	}
-
-	// create routing table,
-	length := math.Ceil(math.Log(float64(flagArgs.m))) + 1
-	// check m is power of two:
-	if (flagArgs.m & (flagArgs.m - 1)) != 0 {
-		length++
-	}
-	log.Println("Routingtable length: ", length, int(length))
-
-	routingTable.init(int(length))
-
-	committees := make(map[uint]bool)
-	// get a list of committees
-	for _, node := range allInfo.nodes {
-		// exclude own committee
-		if allInfo.self.CommitteeID == node.CommitteeID {
-			continue
-		}
-		committees[node.CommitteeID] = true
-	}
-
-	xored := make([]uint, len(committees))
-	// sort committes after some distance metric (XOR kademlia)
-	i := 0
-	for k := range committees {
-		// bitwise XOR
-		xored[i] = allInfo.self.CommitteeID ^ k
-		i++
-	}
-	// now we sort by increasing value since the closest ids are the ones with the longest leading zero
-	sort.Slice(xored, func(i, j int) bool { return xored[i] < xored[j] })
-
-	/*
-		for _, x := range xored {
-			fmt.Println(allInfo.self.CommitteeID, "   ", allInfo.self.CommitteeID^x, "   ", x)
-		}*/
-
-	kademliaCommittees := []uint{}
-	// pick committees in 2^i distances
-	for i := uint(0); true; i++ {
-		dist := int(math.Pow(2, float64(i))) - 1
-		if dist >= len(xored) {
-			dist = len(xored) - 1
-		}
-
-		// we need to xor the xored to get the original id
-		kademliaCommittees = append(kademliaCommittees, allInfo.self.CommitteeID^xored[dist])
-		routingTable.addCommittee(i, allInfo.self.CommitteeID^xored[dist])
-		if dist == len(xored)-1 {
-			break
-		}
-	}
-
-	// get all nodes from these committees
-	nodesInKadamliaCommittees := make(map[uint][]NodeAllInfo)
-	for k := range kademliaCommittees {
-		nodesInKadamliaCommittees[uint(k)] = []NodeAllInfo{}
-	}
-	for _, n := range allInfo.nodes {
-		for _, k := range kademliaCommittees {
-			if k == n.CommitteeID {
-				nodesInKadamliaCommittees[n.CommitteeID] = append(nodesInKadamliaCommittees[n.CommitteeID], n)
-			}
-		}
-	}
-
-	// fmt.Println(nodesInKadamliaCommittees)
-
-	// fmt.Printf("Had %d committes and turned it into %d neighbors\n", len(xored), len(kademliaCommittees))
-
-	// fmt.Printf("Nodes per committee %d, and inted %d\n", math.Log(math.Log(float64(flagArgs.n))), int(math.Log(math.Log(float64(flagArgs.n)))))
-	// get i random index arrays, and use them to get loglogn nodes from each of those committees
-	for i, c := range kademliaCommittees {
-		// pick loglogn
-		l := len(nodesInKadamliaCommittees[c])
-		per := int(math.Ceil(math.Log(float64(l))))
-		indexes := randIndexesWithoutReplacement(l, per)
-		fmt.Println("Per committee: ", per)
-		if per == 0 {
-			errFatal(nil, "routingtable per was 0")
-		}
-		for _, j := range indexes {
-			node := nodesInKadamliaCommittees[c][j]
-			tmp := CommitteeMember{node.ID, node.IP}
-			routingTable.addMember(uint(i), tmp)
-		}
-	}
-
-	// and success!
-
-	//log.Printf("Coordinaton setup finished \n")
-	return allInfo, initialRandomness, currentCommittee, routingTable
 }
 
 func listen(
@@ -264,7 +112,7 @@ func nodeHandleConnection(
 			go handleConsensusEcho(blockHeader, nodeCtx)
 		}
 
-		go handleConsensus(nodeCtx, blockHeader, msg.FromID)
+		go handleConsensus(nodeCtx, blockHeader, msg.FromPub)
 	case "find_node":
 		kMsg, ok := msg.Msg.(KademliaFindNodeMsg)
 		notOkErr(ok, "findNode decoding")
@@ -281,44 +129,24 @@ func nodeHandleConnection(
 
 }
 
-func buildCurrentNeighbours(d uint, currentCommittee *Committee, ownID uint) []uint {
-	currentNeighbours := make([]uint, d)
-
-	// sample list of neighbors
-	indexes := randIndexesWithoutReplacement(len(currentCommittee.Members), int(d))
-
-	i := 0 // index of this memeber
-	c := 0 // index of neighbor
-	for k := range currentCommittee.Members {
-		for j := range indexes { // check if this members index is in indexe
-			if i == j {
-				// Now make sure that you are not part of this set.
-				if k == ownID {
-					// TODO get rid of this recursion
-					return buildCurrentNeighbours(d, currentCommittee, ownID)
-				}
-				currentNeighbours[c] = k
-				c += 1
-			}
-		}
-		i += 1
-	}
-	return currentNeighbours
-}
-
-func leaderElection(currentCommittee *Committee) uint {
+func leaderElection(nodeCtx *NodeCtx) *PubKey {
 	// Find out who is the leader, returns ID of leader
-
 	// For now just pick the one with the lowest ID.
 	// TODO: create an actual leader election protocol based on epoch randomness and nonce, assume every node is online
 	// TODO: figure out some complete leader election protocol
 
-	var lowestID uint = uint(maxId) + 1
-	for k := range currentCommittee.Members {
-		if k < lowestID {
-			lowestID = k
+	// set yourself to the lowest seen
+	var lowestID *PubKey = nodeCtx.self.Priv.Pub
+	lowestIDBigInt := toBigInt(lowestID.Bytes)
+
+	for k := range nodeCtx.committee.Members {
+		kBI := toBigInt(k)
+		if kBI.Cmp(lowestIDBigInt) < 0 {
+			lowestID = nodeCtx.committee.Members[k].Pub
+			lowestIDBigInt = kBI
 		}
 	}
+
 	log.Printf("Leader: %d", lowestID)
 	return lowestID
 }
@@ -355,10 +183,10 @@ func leader(nodeCtx *NodeCtx) {
 	header := new(ConsensusBlockHeader)
 	header.I = 0
 	header.Root = merkleRoot
-	header.LeaderID = nodeCtx.self.ID
+	header.LeaderPub = nodeCtx.self.Priv.Pub
 	header.Tag = "propose"
 
-	msg := Msg{"consensus", header, nodeCtx.self.ID}
+	msg := Msg{"consensus", header, nodeCtx.self.Priv.Pub}
 
 	// start consensus rounds.
 	log.Printf("Leader starting conseuss \n")
@@ -368,7 +196,7 @@ func leader(nodeCtx *NodeCtx) {
 func handleConsensus(
 	nodeCtx *NodeCtx,
 	header ConsensusBlockHeader,
-	fromID uint) {
+	fromPub *PubKey) {
 
 	switch header.Tag {
 	case "propose":
@@ -378,18 +206,18 @@ func handleConsensus(
 		// TODO check header actually comes from leader both by sig, and by election protocol
 
 		// double check
-		if header.LeaderID != fromID {
+		if header.LeaderPub.Bytes != fromPub.Bytes {
 			errFatal(nil, "LeaderID not the same as FromID")
 		}
 
 		// check if we have recivied a message from same id in this iter and add if not
-		nodeCtx.consensusMsgs.safeAdd(header.I, header.LeaderID, header, "leader block allready exists")
+		nodeCtx.consensusMsgs.safeAdd(header.I, header.LeaderPub.Bytes, header, "leader block allready exists")
 
 		// now that we have verified header then we should move on to round 2
 
 		log.Println("sent echo")
 		header.Tag = "echo"
-		msg := Msg{"consensus", header, nodeCtx.self.ID}
+		msg := Msg{"consensus", header, nodeCtx.self.Priv.Pub}
 		sendMsgToCommittee(msg, &nodeCtx.committee)
 
 	case "echo":
@@ -397,9 +225,9 @@ func handleConsensus(
 		go func() {
 			dur := default_delta * time.Millisecond
 			time.Sleep(dur)
-			log.Println("Echo recived from ", fromID)
+			log.Println("Echo recived from ", fromPub)
 
-			_msg := Msg{"consensus", "echo", nodeCtx.self.ID}
+			_msg := Msg{"consensus", "echo", nodeCtx.self.Priv.Pub}
 			go dialAndSend("127.0.0.1:8080", _msg)
 
 			// TODO check valid header
@@ -408,16 +236,16 @@ func handleConsensus(
 			// if not, then send special header with tag pending
 
 			// if from id is leader id
-			if fromID != header.LeaderID {
+			if fromPub.Bytes != header.LeaderPub.Bytes {
 				// chck that we have not recived a header previously from the sender
-				if nodeCtx.consensusMsgs.blockHeaderExists(header.I, fromID) {
+				if nodeCtx.consensusMsgs.blockHeaderExists(header.I, fromPub.Bytes) {
 					errFatal(nil, "allready recivied header")
 				}
 			}
 
 			// fmt.Println((*consensusMsgs)[header.I][fromID])
 			// add header to consensusMsgs
-			nodeCtx.consensusMsgs.safeAdd(header.I, fromID, header, "echo: block header allready exists")
+			nodeCtx.consensusMsgs.safeAdd(header.I, fromPub.Bytes, header, "echo: block header allready exists")
 
 			nodeCtx.channels.echoChan <- true
 		}()
@@ -430,9 +258,9 @@ func handleConsensus(
 		// TODO check that it is different from other recivied valid headers
 
 		// set header of fromid to this pending, so accept round can check
-		nodeCtx.consensusMsgs.add(header.I, fromID, header)
+		nodeCtx.consensusMsgs.add(header.I, fromPub.Bytes, header)
 
-		_msg := Msg{"consensus", "pending", nodeCtx.self.ID}
+		_msg := Msg{"consensus", "pending", nodeCtx.self.Priv.Pub}
 		go dialAndSend("127.0.0.1:8080", _msg)
 		// terminate without accepting
 		return
@@ -442,14 +270,14 @@ func handleConsensus(
 			dur := default_delta * time.Millisecond
 			time.Sleep(dur)
 
-			nodeCtx.consensusMsgs.add(header.I, fromID, header)
+			nodeCtx.consensusMsgs.add(header.I, fromPub.Bytes, header)
 
-			_msg := Msg{"consensus", "accept", nodeCtx.self.ID}
+			_msg := Msg{"consensus", "accept", nodeCtx.self.Priv.Pub}
 			go dialAndSend("127.0.0.1:8080", _msg)
 
 			// todo add coordinator feedback here
 
-			log.Println("Success, recived accept from ", fromID)
+			log.Println("Success, recived accept from ", fromPub)
 		}()
 	default:
 		errFatal(nil, "header tag not known")
@@ -498,7 +326,7 @@ func handleConsensusEcho(
 	if totalVotes >= requiredVotes+uint(1) {
 		// enough votes, send accept
 		header.Tag = "accept"
-		msg := Msg{"consensus", header, nodeCtx.self.ID}
+		msg := Msg{"consensus", header, nodeCtx.self.Priv.Pub}
 		sendMsgToCommittee(msg, &nodeCtx.committee)
 	} else {
 		// not enough votes, terminate

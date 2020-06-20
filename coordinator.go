@@ -13,12 +13,12 @@ import (
 )
 
 type InitialMessageToCoordinator struct {
-	id uint
-	ip string
+	pub *PubKey
+	ip  string
 }
 
 type committeeInfo struct {
-	id  uint
+	id  [32]byte
 	npm uint
 	f   int
 }
@@ -41,7 +41,7 @@ func launchCoordinator(flagArgs *FlagArgs) {
 		These variables should then be sent to every node.
 	*/
 
-	g_allNodesPopulated = make(chan bool)
+	g_allNodesPopulated = make(chan bool, 1)
 
 	// To be used to send ID and IP from node connection to coordinator
 	chanToCoordinator := make(chan InitialMessageToCoordinator, flagArgs.n)
@@ -116,11 +116,11 @@ func coordinatorHandleConnection(conn net.Conn,
 	// get the remote address of the client
 	clientAddr := conn.RemoteAddr().String()
 	// remove port number and add rec_msg.Port instead
-	fmt.Println("1: ", clientAddr)
+	//fmt.Println("1: ", clientAddr)
 	clientAddr = fmt.Sprintf("%s:%d", clientAddr[:strings.IndexByte(clientAddr, ':')], rec_msg.Port)
-	fmt.Println("2: ", clientAddr)
+	//fmt.Println("2: ", clientAddr)
 
-	chanToCoordinator <- InitialMessageToCoordinator{rec_msg.ID, clientAddr}
+	chanToCoordinator <- InitialMessageToCoordinator{rec_msg.Pub, clientAddr}
 
 	// signalize to waitgroup that this connection has recived an ID
 	wg.Done()
@@ -148,7 +148,7 @@ func coordinator(
 	nodeInfos := make([]NodeAllInfo, flagArgs.n)
 	i := 0
 	for elem := range chanToCoordinator {
-		nodeInfos[i].ID = elem.id
+		nodeInfos[i].Pub = elem.pub
 		nodeInfos[i].IP = elem.ip
 		i += 1
 	}
@@ -158,9 +158,9 @@ func coordinator(
 	rand.Shuffle(len(nodeInfos), func(i, j int) { nodeInfos[i], nodeInfos[j] = nodeInfos[j], nodeInfos[i] })
 
 	// Create committees with id
-	committees := make([]uint, flagArgs.m)
+	committees := make([][32]byte, flagArgs.m)
 	for i := uint(0); i < flagArgs.m; i++ {
-		committees[i] = uint(rand.Intn(maxId))
+		committees[i] = hash(getBytes(rand.Intn(maxId)))
 	}
 
 	fmt.Println("Committees: ", committees)
