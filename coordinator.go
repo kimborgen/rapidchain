@@ -27,9 +27,6 @@ type consensusResult struct {
 	echos, pending, accepts int
 }
 
-var g_allNodes []NodeAllInfo
-var g_allNodesPopulated chan bool
-
 func launchCoordinator(flagArgs *FlagArgs) {
 	/*
 		The coordinator should listen to incoming connections untill it has recived n different ids
@@ -40,8 +37,6 @@ func launchCoordinator(flagArgs *FlagArgs) {
 			an initial randomness
 		These variables should then be sent to every node.
 	*/
-
-	g_allNodesPopulated = make(chan bool, 1)
 
 	// To be used to send ID and IP from node connection to coordinator
 	chanToCoordinator := make(chan InitialMessageToCoordinator, flagArgs.n)
@@ -249,12 +244,12 @@ func coordinator(
 
 	rnd := rand.Intn(maxId)
 	msg := ResponseToNodes{nodeInfos, genesisBlock, rnd}
-	g_allNodes = nodeInfos
-	g_allNodesPopulated <- true
 
 	for _, c := range chanToNodes {
 		c <- msg
 	}
+
+	go txGenerator(flagArgs, nodeInfos, users, genesisBlock)
 }
 
 func coordinatorDebugStatsHandleConnection(conn net.Conn,

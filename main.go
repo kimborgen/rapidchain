@@ -56,6 +56,7 @@ func main() {
 	gob.Register(PubKey{})
 	gob.Register(randomKey.Pub.Pub.Curve)
 	gob.Register(ConsensusBlockHeader{})
+	gob.Register(Transaction{})
 
 	if *functionPtr == "coordinator" {
 		launchCoordinator(&flagArgs)
