@@ -36,8 +36,8 @@ func (k *PrivKey) gen() {
 	k.Pub.init()
 }
 
-func (k *PrivKey) sign(hashedMsg []byte) *Sig {
-	r, s, err := ecdsa.Sign(rand.Reader, k.Priv, hashedMsg)
+func (k *PrivKey) sign(hashedMsg [32]byte) *Sig {
+	r, s, err := ecdsa.Sign(rand.Reader, k.Priv, hashedMsg[:])
 	ifErrFatal(err, "ecdsa sign")
 	return &Sig{r, s}
 }
@@ -47,8 +47,8 @@ func (k *PubKey) init() {
 	k.Bytes = hash(b[:])
 }
 
-func (k *PubKey) verify(hashedMsg []byte, sig *Sig) bool {
-	return verify(k.Pub, hashedMsg, sig)
+func (k *PubKey) verify(hashedMsg [32]byte, sig *Sig) bool {
+	return verify(k.Pub, hashedMsg[:], sig)
 }
 
 func (k *PubKey) xyBytes() [64]byte {
