@@ -3,19 +3,25 @@ package main
 import (
 	"fmt"
 	"log"
+	"reflect"
 
+	"github.com/kimborgen/go-merkletree"
 	"github.com/klauspost/reedsolomon"
-	"github.com/wealdtech/go-merkletree"
 )
 
 type IDAGossipMsg struct {
+	Typ        string
 	Chunks     [][]byte
 	Proofs     []*merkletree.Proof
 	MerkleRoot [32]byte
 }
 
-func IDAGossip(nodeCtx *NodeCtx, block []byte) [32]byte {
+func IDAGossip(nodeCtx *NodeCtx, msg []byte, typ string) [32]byte {
 	// Initiates the IDA gossip process
+
+	// Since msg is of unknown size, it cannot always be divided into equal kappa data shards.
+	// Therefor we add a last datashard to contain the rest of the msg.
+	// if msg can be evenly divded, then the last data shard is simply zero bytes
 
 	// initate some static variables
 	// TODO: dynamicly create these
@@ -33,20 +39,42 @@ func IDAGossip(nodeCtx *NodeCtx, block []byte) [32]byte {
 
 	data := make([][]byte, kappa+parity)
 
-	// make sure that block can be divided evenly among the kappa data shards.
-	if len(block)%kappa != 0 {
-		errFatal(nil, fmt.Sprintf("block size %d could not be divided over %d kappa chunks", len(block), kappa))
+	if len(msg)%kappa != 0 {
+		// msg can not be evenly divided by kappa
+		// therefor we must pad message to be divisible
+
+		//fmt.Println(msg)
+		originalMsg := make([]byte, len(msg))
+		copy(originalMsg, msg)
+		//fmt.Printf("Padding msg from len %d", len(msg))
+		msg = padByteToBeDivisible(msg, uint(kappa))
+		//fmt.Printf(" to %d\n", len(msg))
+		//fmt.Println(msg)
+
+		// test unpadding
+		okk := isPadded(msg)
+		notOkErr(okk, "msg was not padded?")
+		unpadded := unPad(msg)
+		if !reflect.DeepEqual(unpadded, originalMsg) {
+			fmt.Println(unpadded, "\n\n", originalMsg)
+			errFatal(nil, "unpadded was not equal to orgiinal msg")
+		}
+
+	}
+
+	chunkSize := len(msg) / (kappa)
+	if len(msg)%kappa != 0 {
+		errFatal(nil, "msg should have been padded")
 	}
 
 	// Create all shards
-	chunkSize := len(block) / kappa
 	for i, _ := range data {
 		data[i] = make([]byte, chunkSize)
 	}
 
 	// populate the first kappa shards
-	for i, _ := range data[:kappa] {
-		data[i] = block[i*chunkSize : (i+1)*chunkSize]
+	for i := 0; i < kappa; i++ {
+		data[i] = msg[i*chunkSize : (i+1)*chunkSize]
 	}
 
 	err = enc.Encode(data)
@@ -63,16 +91,16 @@ func IDAGossip(nodeCtx *NodeCtx, block []byte) [32]byte {
 	ifErrFatal(err, "creating merkle tree")
 
 	root := tree.Root()
-	fmt.Println("Root len: ", len(root))
-	var root32 [32]byte
-	for i, elem := range root {
-		root32[i] = elem
-	}
+	//fmt.Println("Root len: ", len(root))
+	root32 := toByte32(root)
 
 	// create proofs for all leafs
 	proofs := make([]*merkletree.Proof, len(data))
 	for i, _ := range proofs {
-		proofs[i], err = tree.GenerateProof(data[i], 0)
+		// Problem, if data has two equal arrays then GenerateProof will return
+		proofs[i], err = tree.GenerateProofUsingIndex(uint64(i), 0)
+		ifErrFatal(err, "generating proof")
+		// fmt.Println(i, proofs[i].Index, proofs[i], "\n", data[i], "\n\n")
 		if proofs[i].Index != uint64(i) {
 			fmt.Println(proofs[i].Index, i)
 			errFatal(nil, "Proof index not the same as index")
@@ -94,15 +122,15 @@ func IDAGossip(nodeCtx *NodeCtx, block []byte) [32]byte {
 		//fmt.Println("\n\n", chunks)
 		total_chunks += len(chunks)
 		proofs := proofs[i : i+chunksToEach]
-		msgs[ii] = Msg{"IDAGossipMsg", IDAGossipMsg{chunks, proofs, root32}, nodeCtx.self.Priv.Pub}
+		msgs[ii] = Msg{"IDAGossipMsg", IDAGossipMsg{typ, chunks, proofs, root32}, nodeCtx.self.Priv.Pub}
 		ii += 1
 	}
 	log.Println("Creating: Len of chunks ", total_chunks, chunksToEach, len(msgs))
 
 	// send each msg to node
-	for i, msg := range msgs {
+	for i, msgToNode := range msgs {
 		var addr string = nodeCtx.committee.Members[nodeCtx.neighbors[i]].IP
-		dialAndSend(addr, msg)
+		dialAndSend(addr, msgToNode)
 	}
 	return root32
 }
@@ -115,24 +143,23 @@ func getLenOfChunks(msgs []IDAGossipMsg) int {
 	}
 	return totalChunks
 }
-
+handleIDAGossipMsg
 */
 
 func handleIDAGossipMsg(
 	idaMsg IDAGossipMsg,
-	nodeCtx *NodeCtx) {
+	nodeCtx *NodeCtx) bool {
+	// handles IDAGossipMsg returns true if msg is reconstructed into reconstructed messages, false otherwise
+
 	// check if we allready have enough chunks to recreate
-	//fmt.Println("Len of IDAMessages: ", len((*idaMsgs)[idaMsg.MerkleRoot]))
-	//log.Println("Len of chunks: ", getLenOfChunks((*idaMsgs)[idaMsg.MerkleRoot]))
 	if l := nodeCtx.idaMsgs.getLenOfChunks(idaMsg.MerkleRoot); l >= default_kappa {
-		// log.Printf("#IDAchunks allready enough %d of required %d\n", l, default_kappa)
-		return
+		return false
 	}
 
 	// check that IDA messages was correct
 	if len(idaMsg.Chunks) != len(idaMsg.Proofs) {
 		errr(nil, "number of proofs not matching amount of chunks")
-		return
+		return false
 	}
 	for i, _ := range idaMsg.Chunks {
 		root := make([]byte, 32)
@@ -143,7 +170,7 @@ func handleIDAGossipMsg(
 		fail := ifErr(err, "merkletree.Verifyproof")
 		if fail || !verified {
 			errr(nil, "chunk could not be verified")
-			return
+			return false
 		}
 	}
 
@@ -159,7 +186,7 @@ func handleIDAGossipMsg(
 					// check if index is equal
 					if newProof.Index == existingProof.Index {
 						//log.Printf("Found existing proof with same index\n")
-						return
+						return false
 					}
 				}
 			}
@@ -193,8 +220,8 @@ func handleIDAGossipMsg(
 			err = enc.Reconstruct(data)
 			ifErrFatal(err, "Could not reconstruct data")
 
-			// check that we don't allready have a block for this root
-			ok := nodeCtx.blocks.safeAdd(idaMsg.MerkleRoot, data)
+			// add IDAMsg to check that we don't allready have a msg for this root
+			ok := nodeCtx.reconstructedIdaMsgs.safeAdd(idaMsg.MerkleRoot, data)
 
 			if ok {
 				// now the first default_kappa elements of data is the message! :)
@@ -205,15 +232,14 @@ func handleIDAGossipMsg(
 				go dialAndSend("127.0.0.1:8080", msg)
 				go gossipSend(idaMsg, nodeCtx)
 
-				return
+				return true
 			}
-
 		}
 
 		go gossipSend(idaMsg, nodeCtx)
 
 	}
-	return
+	return false
 }
 
 func gossipSend(msg IDAGossipMsg, nodeCtx *NodeCtx) {
