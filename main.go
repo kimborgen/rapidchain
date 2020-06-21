@@ -58,6 +58,11 @@ func main() {
 	gob.Register(ConsensusBlockHeader{})
 	gob.Register(Transaction{})
 
+	// ensure some invariants
+	if default_kappa > 256 {
+		errFatal(nil, "Default kappa was over 256/1byte")
+	}
+
 	if *functionPtr == "coordinator" {
 		launchCoordinator(&flagArgs)
 	} else {

@@ -117,7 +117,28 @@ func nodeHandleConnection(
 	case "IDAGossipMsg":
 		idaMsg, ok := msg.Msg.(IDAGossipMsg)
 		notOkErr(ok, "IDAGossipMsg decoding")
-		go handleIDAGossipMsg(idaMsg, nodeCtx)
+		reconstructed := handleIDAGossipMsg(idaMsg, nodeCtx)
+		if reconstructed {
+			switch idaMsg.Typ {
+			case "tx":
+				// reconstruct tx
+				txData := nodeCtx.reconstructedIdaMsgs.getData(idaMsg.MerkleRoot)
+				tx := Transaction{}
+				tx.decode(txData)
+
+				// add tx to pool
+				nodeCtx.txPool.add(&tx)
+			case "block":
+				blockByte := nodeCtx.reconstructedIdaMsgs.getData(idaMsg.MerkleRoot)
+				block := Block{}
+				block.decode(blockByte)
+
+				// Todo add block to Blockchain
+
+			default:
+				errFatal(nil, "Unknown IDAGossipMsg type")
+			}
+		}
 
 	case "consensus":
 		blockHeader, ok := msg.Msg.(ConsensusBlockHeader)
@@ -145,7 +166,6 @@ func nodeHandleConnection(
 		handleFindNode(nodeCtx, conn, kMsg)
 	case "transaction":
 		// recived a transaction
-
 		tMsg, ok := msg.Msg.(Transaction)
 		notOkErr(ok, "transaction decoding") //todo dont need such strict err
 		// figure out which committee the transaction belongs to
@@ -153,7 +173,8 @@ func nodeHandleConnection(
 
 		// if current committe then initiate IDA-Gossip
 		if cID == nodeCtx.self.CommitteeID {
-			// ida gossip
+			// ida gossip the tx so the rest of the committee gets the tx
+			IDAGossip(nodeCtx, tMsg.encode(), "tx")
 
 			// add to tx pool
 			ok := nodeCtx.txPool.safeAdd(&tMsg)
@@ -207,7 +228,7 @@ func leader(nodeCtx *NodeCtx) {
 	block := createBlock(nodeCtx.flagArgs.B)
 
 	// ida-gossip the block
-	merkleRoot := IDAGossip(nodeCtx, block)
+	merkleRoot := IDAGossip(nodeCtx, block, "block")
 
 	// we should wait untill IDA gossip finnishes...
 	//dur := time.Duration(math.Log(float64(flagArgs.m)))
@@ -215,7 +236,7 @@ func leader(nodeCtx *NodeCtx) {
 	//time.Sleep(dur)
 	// wait until we have recivied and recreated IDA message
 
-	for !nodeCtx.blocks.isBlock(merkleRoot) {
+	for !nodeCtx.reconstructedIdaMsgs.keyExists(merkleRoot) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	// sleep a delta before iniation consensus

@@ -181,8 +181,8 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 	nodeCtx.channels = Channels{}
 	nodeCtx.channels.init(len(currentCommittee.Members))
 
-	nodeCtx.blocks = Blocks{}
-	nodeCtx.blocks.init()
+	nodeCtx.reconstructedIdaMsgs = ReconstructedIdaMsgs{}
+	nodeCtx.reconstructedIdaMsgs.init()
 	// add genesis block here
 
 	nodeCtx.i = CurrentIteration{}
