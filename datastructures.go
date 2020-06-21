@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"math/big"
 	"sync"
 )
@@ -304,6 +306,21 @@ func (t *Transaction) setHash() {
 	t.Hash = t.calculateHash()
 }
 
+func (t *Transaction) encode() []byte {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(t)
+	ifErrFatal(err, "transaction encode")
+	return buf.Bytes()
+}
+
+func (t *Transaction) decode(b []byte) {
+	buf := bytes.NewBuffer(b)
+	dec := gob.NewDecoder(buf)
+	err := dec.Decode(t)
+	ifErrFatal(err, "transaction decode")
+}
+
 type ConsensusSignature struct {
 	IdaRoot   [32]byte
 	Iteration uint
@@ -353,6 +370,28 @@ func (b *Block) calculateHash() [32]byte {
 
 func (b *Block) setHash() {
 	b.Hash = b.calculateHash()
+}
+
+func (b *Block) encode() []byte {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(b)
+	ifErrFatal(err, "transaction encode")
+	return buf.Bytes()
+}
+
+func (b *Block) decode(bArr []byte) {
+	buf := bytes.NewBuffer(bArr)
+	dec := gob.NewDecoder(buf)
+	err := dec.Decode(b)
+	ifErrFatal(err, "transaction decode")
+}
+
+// Todo define, extend and create reconfiguration block
+type ReconfigurationBlock struct {
+	Hash        [32]byte
+	CommitteeID [32]byte
+	Members     map[[32]byte]*CommitteeMember
 }
 
 // routing table
@@ -448,29 +487,29 @@ func (ida *IdaMsgs) getLen() uint {
 	return uint(len(ida.m))
 }
 
-type Blocks struct {
+type ReconstructedIdaMsgs struct {
 	m   map[[32]byte][][]byte
 	mux sync.Mutex
 }
 
-func (b *Blocks) init() {
+func (b *ReconstructedIdaMsgs) init() {
 	b.m = make(map[[32]byte][][]byte)
 }
 
-func (b *Blocks) isBlock(root [32]byte) bool {
+func (b *ReconstructedIdaMsgs) keyExists(root [32]byte) bool {
 	b.mux.Lock()
 	defer b.mux.Unlock()
 	_, ok := b.m[root]
 	return ok
 }
 
-func (b *Blocks) add(root [32]byte, block [][]byte) {
+func (b *ReconstructedIdaMsgs) add(root [32]byte, block [][]byte) {
 	b.mux.Lock()
 	b.m[root] = block
 	b.mux.Unlock()
 }
 
-func (b *Blocks) safeAdd(root [32]byte, block [][]byte) bool {
+func (b *ReconstructedIdaMsgs) safeAdd(root [32]byte, block [][]byte) bool {
 	b.mux.Lock()
 	defer b.mux.Unlock()
 	if _, ok := b.m[root]; ok {
@@ -480,16 +519,55 @@ func (b *Blocks) safeAdd(root [32]byte, block [][]byte) bool {
 	return true
 }
 
-func (b *Blocks) getBlock(root [32]byte) [][]byte {
+func (b *ReconstructedIdaMsgs) get(root [32]byte) [][]byte {
 	b.mux.Lock()
 	defer b.mux.Unlock()
 	return b.m[root]
 }
 
-func (b *Blocks) getLen() uint {
+func (b *ReconstructedIdaMsgs) pop(root [32]byte) [][]byte {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	ret := b.m[root]
+	delete(b.m, root)
+	return ret
+}
+
+func (b *ReconstructedIdaMsgs) getLen() uint {
 	b.mux.Lock()
 	defer b.mux.Unlock()
 	return uint(len(b.m))
+}
+
+func (b *ReconstructedIdaMsgs) getData(root [32]byte) []byte {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	// get data, flatten it, and unpadd
+	data := b.m[root][:default_kappa]
+	bArr := []byte{}
+	for _, chunk := range data {
+		bArr = append(bArr, chunk...)
+	}
+
+	if isPadded(bArr) {
+		return unPad(bArr)
+	}
+	return bArr
+}
+
+func (b *ReconstructedIdaMsgs) popData(root [32]byte) []byte {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	data := b.m[root][:default_kappa]
+	bArr := []byte{}
+	for _, chunk := range data {
+		bArr = append(bArr, chunk...)
+	}
+	delete(b.m, root)
+	if isPadded(bArr) {
+		return unPad(bArr)
+	}
+	return bArr
 }
 
 type ConsensusMsgs struct {
@@ -591,19 +669,19 @@ func (c *CurrentIteration) getI() uint {
 
 // context for a node, to be passed everywhere, acts like a global var
 type NodeCtx struct {
-	flagArgs      FlagArgs
-	committee     Committee  // current committee
-	neighbors     [][32]byte // neighboring nodes
-	self          SelfInfo
-	allInfo       map[[32]byte]NodeAllInfo // cheat variable for easy testing
-	idaMsgs       IdaMsgs
-	blocks        Blocks
-	consensusMsgs ConsensusMsgs
-	channels      Channels
-	i             CurrentIteration
-	routingTable  RoutingTable
-	committeeList [][32]byte //list of all committee ids, to be replaced with reference block?
-	txPool        TxPool
+	flagArgs             FlagArgs
+	committee            Committee  // current committee
+	neighbors            [][32]byte // neighboring nodes
+	self                 SelfInfo
+	allInfo              map[[32]byte]NodeAllInfo // cheat variable for easy testing
+	idaMsgs              IdaMsgs
+	reconstructedIdaMsgs ReconstructedIdaMsgs
+	consensusMsgs        ConsensusMsgs
+	channels             Channels
+	i                    CurrentIteration
+	routingTable         RoutingTable
+	committeeList        [][32]byte //list of all committee ids, to be replaced with reference block?
+	txPool               TxPool
 }
 
 // generic msg. typ indicates which struct to decode msg to.

@@ -103,3 +103,58 @@ func sortBigIntArr(a *[]*big.Int) {
 	sort.Slice(b, func(i, j int) bool { return b[i].Cmp(b[j]) < 0 })
 	a = &b
 }
+
+func padByteToBeDivisible(b []byte, div uint) []byte {
+	blen := uint(len(b))
+	toAdd := uint(0)
+	for {
+		if (blen+toAdd)%div != 0 {
+			toAdd++
+		} else {
+			break
+		}
+	}
+	if toAdd > 255 {
+		errFatal(nil, "Had to add more bytes than can be represented by 1byte")
+	}
+	return pad(b, uint8(toAdd))
+}
+
+func pad(b []byte, bytesToAdd uint8) []byte {
+	// pad bytes using PKCS#7 https://en.wikipedia.org/wiki/Padding_(cryptography)#PKCS7
+	// (each padded byte indicate how many bytes are padded)
+	newB := make([]byte, uint(len(b))+uint(bytesToAdd))
+	padB := byte(bytesToAdd)
+	for i, byt := range b {
+		newB[i] = byt
+	}
+	for i := uint(len(b)); i < uint(len(b))+uint(bytesToAdd); i++ {
+		newB[i] = padB
+	}
+	return newB
+}
+
+func isPadded(b []byte) bool {
+	// figures out if given byte array is padded using PKCS#7
+	padded := uint8(b[len(b)-1])
+	pB := uint(padded)
+	uB := uint(len(b))
+	if uB <= pB {
+		// array is shorter or same as indicated padded bytes therefor it is not padded
+		return false
+	}
+	isP := true
+	for i := uB - pB; i < uB; i++ {
+		if uint8(b[i]) != padded {
+			isP = false
+			break
+		}
+	}
+	return isP
+}
+
+func unPad(b []byte) []byte {
+	notOkErr(isPadded(b), "byte array was not padded")
+	padded := uint8(b[len(b)-1])
+	return b[:uint(len(b))-uint(padded)]
+}
