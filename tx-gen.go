@@ -17,7 +17,7 @@ func genUsers(flagArgs *FlagArgs) *[]PrivKey {
 	return &users
 }
 
-func genGenesisBlock(flagArgs *FlagArgs, users *[]PrivKey) *Block {
+func genGenesisBlock(flagArgs *FlagArgs, users *[]PrivKey) *FinalBlock {
 
 	per := uint(float64(flagArgs.totalCoins) / float64(flagArgs.nUsers))
 
@@ -33,21 +33,21 @@ func genGenesisBlock(flagArgs *FlagArgs, users *[]PrivKey) *Block {
 	}
 	genesisTx.setHash()
 
-	genesisBlock := Block{}
-	genesisBlock.PreviousHash = [32]byte{}
-	genesisBlock.Signatures = nil
+	genesisBlock := new(ProposedBlock)
 	// since there is only one transaction set merkle root to hash of gensisTx
-	genesisBlock.BlockHeader = BlockHeader{}
-	genesisBlock.BlockHeader.IdaRoot = genesisTx.Hash
-	genesisBlock.Transactions = []Transaction{genesisTx}
+	genesisBlock.MerkleRoot = genesisTx.Hash
+	genesisBlock.Transactions = []*Transaction{&genesisTx}
 	// since the only thing in this block is the genesis tx, use that hash
-	genesisBlock.Hash = genesisTx.Hash
+	genesisBlock.GossipHash = genesisTx.Hash
+
+	genesisFinalBlock := new(FinalBlock)
+	genesisFinalBlock.proposedBlock = genesisBlock
 
 	//fmt.Println("Block: ", genesisBlock)
-	return &genesisBlock
+	return genesisFinalBlock
 }
 
-func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlock *Block) {
+func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlock *FinalBlock) {
 	// Emulates users by continously generating transactions
 
 	if flagArgs.tps == 0 {
@@ -67,8 +67,8 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	}
 
 	// add gensis block output to the main UTXO set
-	genTxHash := gensisBlock.Transactions[0].Hash
-	outputs := gensisBlock.Transactions[0].Outputs
+	genTxHash := gensisBlock.proposedBlock.Transactions[0].Hash
+	outputs := gensisBlock.proposedBlock.Transactions[0].Outputs
 	for i := range outputs {
 		set.add(genTxHash, &outputs[i])
 		userSets[outputs[i].PubKey.Bytes].add(genTxHash, &outputs[i])
@@ -77,9 +77,6 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	i := 0
 	time.Sleep(3 * time.Second)
 	for {
-		if i > 3 {
-			return
-		}
 		go _txGenerator(flagArgs, &allNodes, users, set, &userSets)
 		dur := time.Second / time.Duration(flagArgs.tps)
 		// fmt.Println("Sleeping for ", dur)

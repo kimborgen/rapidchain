@@ -48,14 +48,14 @@ func main() {
 	// register structs with gob
 	gob.Register(IDAGossipMsg{})
 	gob.Register([32]uint8{})
-	gob.Register(BlockHeader{})
+	gob.Register(ProposedBlock{})
 	gob.Register(KademliaFindNodeMsg{})
 	gob.Register(KademliaFindNodeResponse{})
 	gob.Register(elliptic.CurveParams{})
 	gob.Register(ecdsa.PublicKey{})
 	gob.Register(PubKey{})
 	gob.Register(randomKey.Pub.Pub.Curve)
-	gob.Register(ConsensusBlockHeader{})
+	gob.Register(ConsensusMsg{})
 	gob.Register(Transaction{})
 
 	// ensure some invariants

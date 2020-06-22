@@ -31,7 +31,7 @@ func IDAGossip(nodeCtx *NodeCtx, msg []byte, typ string) [32]byte {
 	if parity != default_parity {
 		errFatal(nil, "parity not equal to default")
 	}
-	log.Println("Paritiy: ", parity)
+	// log.Println("Paritiy: ", parity)
 
 	// build reed solomon chunks
 	enc, err := reedsolomon.New(kappa, parity)
@@ -125,7 +125,7 @@ func IDAGossip(nodeCtx *NodeCtx, msg []byte, typ string) [32]byte {
 		msgs[ii] = Msg{"IDAGossipMsg", IDAGossipMsg{typ, chunks, proofs, root32}, nodeCtx.self.Priv.Pub}
 		ii += 1
 	}
-	log.Println("Creating: Len of chunks ", total_chunks, chunksToEach, len(msgs))
+	// log.Println("Creating: Len of chunks ", total_chunks, chunksToEach, len(msgs))
 
 	// send each msg to node
 	for i, msgToNode := range msgs {
@@ -225,7 +225,7 @@ func handleIDAGossipMsg(
 
 			if ok {
 				// now the first default_kappa elements of data is the message! :)
-				log.Println("Message succesfully recreated and added")
+				// log.Println("Message succesfully recreated and added")
 
 				// send success message to coordinator
 				msg := Msg{"IDASuccess", idaMsg.MerkleRoot, nodeCtx.self.Priv.Pub}

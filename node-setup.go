@@ -192,6 +192,9 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 	nodeCtx.txPool = TxPool{}
 	nodeCtx.txPool.init()
 
+	nodeCtx.blockchain = Blockchain{}
+	nodeCtx.blockchain.init(selfInfo.CommitteeID)
+
 	buildCurrentNeighbours(nodeCtx)
 
 	return initialRandomness
