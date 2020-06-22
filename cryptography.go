@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"math/big"
 )
 
@@ -60,6 +61,10 @@ func (k *PubKey) xyBytes() [64]byte {
 		bb[i] = b[i]
 	}
 	return bb
+}
+
+func (k *PubKey) string() string {
+	return hex.EncodeToString(k.Bytes[:])
 }
 
 func verify(pubKey *ecdsa.PublicKey, hashedMsg []byte, sig *Sig) bool {
