@@ -29,8 +29,15 @@ func reciveMsg(conn net.Conn, obj interface{}) {
 	ifErrFatal(err, "decoding")
 }
 
-func sendMsgToCommittee(msg Msg, currentCommittee *Committee) {
-	for _, v := range (*currentCommittee).Members {
+func sendMsgToCommittee(msg Msg, committee *Committee) {
+	for _, v := range (*committee).Members {
+		go dialAndSend(v.IP, msg)
+	}
+}
+
+func sendMsgToCommitteeAndSelf(msg Msg, nodeCtx *NodeCtx) {
+	go dialAndSend(nodeCtx.self.IP, msg)
+	for _, v := range nodeCtx.committee.Members {
 		go dialAndSend(v.IP, msg)
 	}
 }
