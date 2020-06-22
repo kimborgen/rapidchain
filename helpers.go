@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/gob"
 	"log"
 	"math/big"
@@ -157,4 +158,10 @@ func unPad(b []byte) []byte {
 	notOkErr(isPadded(b), "byte array was not padded")
 	padded := uint8(b[len(b)-1])
 	return b[:uint(len(b))-uint(padded)]
+}
+
+func uintToByte(u uint) []byte {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(u))
+	return b
 }
