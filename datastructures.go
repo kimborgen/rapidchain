@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"fmt"
 	"math/big"
 	"sync"
 )
@@ -259,6 +260,12 @@ func (s *UTXOSet) getOutputsToFillValue(value uint) (*[]txIDNonceTuple, bool) {
 	return &res, false
 }
 
+type InTx struct {
+	TxID [32]byte // output in transaction
+	N    uint     // nonce in output in transaction
+	Sig  *Sig     // sig of TxID and Transaction.Hash
+}
+
 type OutTx struct {
 	Value  uint // value of UTXO
 	N      uint // nonce/i in output list of tx
@@ -274,21 +281,14 @@ func (o *OutTx) bytes() []byte {
 	return byteSliceAppend(b1, b2, b3[:])
 }
 
-type InTx struct {
-	TxID [32]byte // output in transaction
-	N    uint     // nonce in output in transaction
-	Sig  *Sig
-}
-
 func (i *InTx) bytes() []byte {
-	return getBytes(i)
+	return byteSliceAppend(i.TxID[:], uintToByte(i.N))
 }
 
 type Transaction struct {
 	Hash    [32]byte // hash of inputs and outputs
 	Inputs  []InTx
 	Outputs []OutTx
-	Sig     *Sig // sig of hash
 }
 
 func (t *Transaction) calculateHash() [32]byte {
@@ -304,6 +304,14 @@ func (t *Transaction) calculateHash() [32]byte {
 
 func (t *Transaction) setHash() {
 	t.Hash = t.calculateHash()
+}
+
+// Signs all inputs
+func (t *Transaction) signInputs(priv *PrivKey) {
+	for i := range t.Inputs {
+		// sign InTx.TxID and t.Hash
+		t.Inputs[i].Sig = priv.sign(hash(byteSliceAppend(t.Inputs[i].bytes(), t.Hash[:])))
+	}
 }
 
 func (t *Transaction) encode() []byte {
