@@ -338,12 +338,38 @@ type ProposedBlock struct {
 }
 
 func (b *ProposedBlock) calculateHash() [32]byte {
+	hashExcMR := b.calculateHashExceptMerkleRoot()
+	hashMr := b.calculateHashOfMerkleRoot()
+
+	return hash(byteSliceAppend(hashExcMR[:], hashMr[:]))
+}
+
+func (b *ProposedBlock) calculateHashExceptMerkleRoot() [32]byte {
 	pgb := b.PreviousGossipHash[:]
 	i := uintToByte(b.Iteration)
 	c := b.CommitteeID[:]
 	lp := getBytes(b.LeaderPub)
-	mr := b.MerkleRoot[:]
-	return hash(byteSliceAppend(pgb, i, c, lp, mr))
+	return hash(byteSliceAppend(pgb, i, c, lp))
+}
+
+func (b *ProposedBlock) calculateHashOfMerkleRoot() [32]byte {
+	return hash(b.MerkleRoot[:])
+}
+
+func (b *ProposedBlock) isHashesCorrect() bool {
+	rest := b.calculateHashExceptMerkleRoot()
+	mr := b.calculateHashOfMerkleRoot()
+	together := hash(byteSliceAppend(rest[:], mr[:]))
+
+	h := b.calculateHash()
+
+	fmt.Println(together, "\n", h, "\n")
+
+	fmt.Println(bytesToString(together[:]), "\n", bytesToString(h[:]))
+	if bytesToString(together[:]) == bytesToString(h[:]) {
+		return true
+	}
+	return false
 }
 
 func (b *ProposedBlock) setHash() {
