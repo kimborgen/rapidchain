@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"encoding/hex"
 	"log"
 	"math/big"
 	"math/rand"
@@ -88,7 +89,7 @@ func byteSliceAppend(b ...[]byte) []byte {
 
 func toByte32(b []byte) [32]byte {
 	var a [32]byte
-	for i := range a {
+	for i := range b {
 		a[i] = b[i]
 	}
 	return a
@@ -164,4 +165,8 @@ func uintToByte(u uint) []byte {
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, uint64(u))
 	return b
+}
+
+func bytesToString(b []byte) string {
+	return hex.EncodeToString(b[:])
 }
