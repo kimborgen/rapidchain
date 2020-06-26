@@ -229,7 +229,7 @@ func handleIDAGossipMsg(
 
 				// send success message to coordinator
 				msg := Msg{"IDASuccess", idaMsg.MerkleRoot, nodeCtx.self.Priv.Pub}
-				go dialAndSend("127.0.0.1:8080", msg)
+				go dialAndSend(coord+":8080", msg)
 				go gossipSend(idaMsg, nodeCtx)
 
 				return true

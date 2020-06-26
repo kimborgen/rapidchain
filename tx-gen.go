@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"time"
@@ -17,37 +18,64 @@ func genUsers(flagArgs *FlagArgs) *[]PrivKey {
 	return &users
 }
 
-func genGenesisBlock(flagArgs *FlagArgs, users *[]PrivKey) *FinalBlock {
+func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *[]PrivKey) []FinalBlock {
 
 	per := uint(float64(flagArgs.totalCoins) / float64(flagArgs.nUsers))
 
-	// genesis transactions
-	genesisTx := Transaction{}
-	genesisTx.Outputs = make([]OutTx, len(*users))
-	for i, u := range *users {
-		tx := OutTx{}
-		tx.Value = per
-		tx.N = uint(i)
-		tx.PubKey = u.Pub
-		genesisTx.Outputs[i] = tx
+	ctx := new(NodeCtx)
+	ctx.committeeList = make([][32]byte, len(committeeInfos))
+	for i, c := range committeeInfos {
+		ctx.committeeList[i] = c.id
 	}
-	genesisTx.setHash()
 
-	genesisBlock := new(ProposedBlock)
-	// since there is only one transaction set merkle root to hash of gensisTx
-	genesisBlock.MerkleRoot = genesisTx.Hash
-	genesisBlock.Transactions = []*Transaction{&genesisTx}
-	// since the only thing in this block is the genesis tx, use that hash
-	genesisBlock.GossipHash = genesisTx.Hash
+	finalBlocks := make([]FinalBlock, len(committeeInfos))
 
-	genesisFinalBlock := new(FinalBlock)
-	genesisFinalBlock.proposedBlock = genesisBlock
+	// genesis block, one per committtee
+	for i := range committeeInfos {
 
+		genesisTx := Transaction{}
+		genesisTx.Outputs = make([]*OutTx, len(*users))
+		for j, u := range *users {
+			tx := new(OutTx)
+			tx.Value = per
+			tx.N = uint(j)
+			tx.PubKey = u.Pub
+			genesisTx.Outputs[j] = tx
+		}
+
+		txHash := [32]byte{}
+		// need to set a txHash that will point to the committee
+		for {
+			tmpp := make([]byte, 32)
+			rand.Read(tmpp)
+			tmp := toByte32(tmpp)
+
+			if committeeInfos[i].id == txFindClosestCommittee(ctx, tmp) {
+				txHash = tmp
+				break
+			}
+		}
+		genesisTx.Hash = txHash
+		// genesisTx.setHash()
+		genesisBlock := new(ProposedBlock)
+		// since there is only one transaction set merkle root to hash of gensisTx
+		genesisBlock.MerkleRoot = genesisTx.Hash
+		genesisBlock.Transactions = []*Transaction{&genesisTx}
+		genesisBlock.CommitteeID = committeeInfos[i].id
+		// since the only thing in this block is the genesis tx, use that hash
+		// genesisBlock.GossipHash = genesisTx.Hash
+		genesisBlock.GossipHash = txHash
+		genesisFinalBlock := new(FinalBlock)
+		genesisFinalBlock.ProposedBlock = *genesisBlock
+		finalBlocks[i] = *genesisFinalBlock
+
+	}
 	//fmt.Println("Block: ", genesisBlock)
-	return genesisFinalBlock
+	// fmt.Println(finalBlocks)
+	return finalBlocks
 }
 
-func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlock *FinalBlock) {
+func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlocks []FinalBlock) {
 	// Emulates users by continously generating transactions
 
 	if flagArgs.tps == 0 {
@@ -67,21 +95,25 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	}
 
 	// add gensis block output to the main UTXO set
-	genTxHash := gensisBlock.proposedBlock.Transactions[0].Hash
-	outputs := gensisBlock.proposedBlock.Transactions[0].Outputs
-	for i := range outputs {
-		set.add(genTxHash, &outputs[i])
-		userSets[outputs[i].PubKey.Bytes].add(genTxHash, &outputs[i])
+	for _, b := range gensisBlocks {
+		for _, t := range b.ProposedBlock.Transactions[0].Outputs {
+			set.add(b.ProposedBlock.GossipHash, t)
+			userSets[t.PubKey.Bytes].add(b.ProposedBlock.GossipHash, t)
+		}
 	}
 
 	i := 0
 	time.Sleep(3 * time.Second)
+	rand.Seed(42)
 	for {
 		go _txGenerator(flagArgs, &allNodes, users, set, &userSets)
 		dur := time.Second / time.Duration(flagArgs.tps)
 		// fmt.Println("Sleeping for ", dur)
 		time.Sleep(dur)
 		i++
+		if i == 21 {
+			return
+		}
 	}
 }
 
@@ -106,39 +138,52 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	outputs, ok := userSet.getOutputsToFillValue(valueToSend)
 	notOkErr(ok, "not enough output value, but this should not happen")
 
+	fmt.Println(outputs)
+
 	// pick random user to send transaction to, aka output of tx
 	rndTo := rand.Intn(len(*users))
 	userTo := (*users)[rndTo].Pub
 
 	// create transaction
 	totalInputValue := uint(0)
-	t := Transaction{}
-	inputs := make([]InTx, len(*outputs))
+	t := new(Transaction)
+	inputs := make([]*InTx, len(*outputs))
 	for i, o := range *outputs {
 		// create sig of txID || n || pubkey
 		outTx := userSet.getAndRemove(o.txID, o.n)
 		// todo remove from overall set aswell
 		totalInputValue += outTx.Value
-		hashToSig := hash(byteSliceAppend(o.txID[:], getBytes(o.n), outTx.PubKey.Bytes[:]))
-		sig := user.sign(hashToSig)
-		inputs[i] = InTx{o.txID, o.n, sig}
+
+		newInTx := new(InTx)
+		newInTx.TxHash = o.txID
+		newInTx.OrigTxHash = [32]byte{}
+		newInTx.N = o.n
+		inputs[i] = newInTx
 	}
 
 	// only one or two outputs (if there is some value left over, then send it back to user)
-	txOutputs := []OutTx{}
-	txOutputs = append(txOutputs, OutTx{valueToSend, 0, userTo})
+	txOutputs := []*OutTx{}
+	newOutTx := new(OutTx)
+	newOutTx.Value = valueToSend
+	newOutTx.N = 0
+	newOutTx.PubKey = userTo
+	txOutputs = append(txOutputs, newOutTx)
 	if totalInputValue != valueToSend {
 		// there is a rest that we must send back to user
 		rest := totalInputValue - valueToSend
 		if rest <= 0 {
 			errFatal(nil, "rest was not positive")
 		}
-		txOutputs = append(txOutputs, OutTx{rest, 1, user.Pub})
+		newOutput := new(OutTx)
+		newOutput.Value = rest
+		newOutput.N = 1
+		newOutput.PubKey = user.Pub
+		txOutputs = append(txOutputs, newOutput)
 	}
 	t.Inputs = inputs
 	t.Outputs = txOutputs
 	t.setHash()
-	t.Sig = user.sign(t.Hash)
+	t.signInputs(&user)
 
 	// pick random node to send tx to
 	rndNode := rand.Intn(len(*allNodes))
@@ -149,7 +194,7 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	go dialAndSend(node.IP, msg)
 
 	// manually add the output to userTo
-	(*userSets)[userTo.Bytes].add(t.Hash, &txOutputs[0])
+	(*userSets)[userTo.Bytes].add(t.Hash, txOutputs[0])
 
 	log.Println("Sent tx")
 }

@@ -155,7 +155,7 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 		l := len(nodesInKadamliaCommittees[c])
 		per := int(math.Ceil(math.Log(float64(l))))
 		indexes := randIndexesWithoutReplacement(l, per)
-		fmt.Println("Per committee: ", per)
+		// fmt.Println("Per committee: ", per)
 		if per == 0 {
 			errFatal(nil, "routingtable per was 0")
 		}
@@ -192,8 +192,28 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 	nodeCtx.txPool = TxPool{}
 	nodeCtx.txPool.init()
 
+	nodeCtx.crossTxPool = CrossTxPool{}
+	nodeCtx.crossTxPool.init()
+
+	nodeCtx.utxoSet = UTXOSet{}
+	nodeCtx.utxoSet.init()
+
 	nodeCtx.blockchain = Blockchain{}
 	nodeCtx.blockchain.init(selfInfo.CommitteeID)
+
+	gb := response.GensisisBlocks
+	// fmt.Println(gb)
+	fmt.Println("Len genesis blocks", len(gb))
+	for _, b := range gb {
+		fmt.Print("this committee ", b.ProposedBlock.CommitteeID == nodeCtx.self.CommitteeID, "\n")
+		if b.ProposedBlock.CommitteeID == nodeCtx.self.CommitteeID {
+			b.processBlock(nodeCtx)
+			nodeCtx.blockchain._add(&b)
+			break
+		}
+	}
+
+	nodeCtx.utxoSet.verifyNonces()
 
 	buildCurrentNeighbours(nodeCtx)
 
@@ -201,6 +221,7 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 }
 
 func buildCurrentNeighbours(nodeCtx *NodeCtx) {
+
 	currentNeighbours := make([][32]byte, nodeCtx.flagArgs.d)
 
 	// sample list of neighbors
@@ -221,6 +242,6 @@ func buildCurrentNeighbours(nodeCtx *NodeCtx) {
 		}
 		i += 1
 	}
-	nodeCtx.neighbors = currentNeighbours
 
+	nodeCtx.neighbors = currentNeighbours
 }

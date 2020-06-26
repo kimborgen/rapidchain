@@ -10,7 +10,6 @@ func handleConsensus(
 	nodeCtx *NodeCtx,
 	cMsg *ConsensusMsg,
 	fromPub *PubKey) {
-
 	switch cMsg.Tag {
 	case "propose":
 		// TODO validate block with header
@@ -53,7 +52,7 @@ func handleConsensus(
 		time.Sleep(dur)
 
 		_msg := Msg{"consensus", "echo", nodeCtx.self.Priv.Pub}
-		go dialAndSend("127.0.0.1:8080", _msg)
+		go dialAndSend(coord+":8080", _msg)
 
 		// TODO check valid header
 
@@ -65,7 +64,10 @@ func handleConsensus(
 		// check that we have recived a propose from this gossiphash
 
 		if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
-			errFatal(nil, "Recived an echo, but have not recived a propose for this gossiphash")
+			time.Sleep(dur)
+			if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
+				errFatal(nil, "Recived an echo, but have not recived a propose for this gossiphash")
+			}
 		}
 		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
 		nodeCtx.channels.echoChan <- true
@@ -81,14 +83,14 @@ func handleConsensus(
 		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
 
 		_msg := Msg{"consensus", "pending", nodeCtx.self.Priv.Pub}
-		go dialAndSend("127.0.0.1:8080", _msg)
+		go dialAndSend(coord+":8080", _msg)
 		// terminate without accepting
 		return
 	case "accept":
 		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
 
 		_msg := Msg{"consensus", "accept", nodeCtx.self.Priv.Pub}
-		go dialAndSend("127.0.0.1:8080", _msg)
+		go dialAndSend(coord+":8080", _msg)
 
 		// now add final block if recived enough accepts
 
@@ -169,11 +171,27 @@ func handleConsensusAccept(
 
 		// create new final block
 		finalBlock := new(FinalBlock)
-		finalBlock.proposedBlock = block
-		finalBlock.Signatures = consensusMsgs
+		finalBlock.ProposedBlock = *block
+		finalBlock.Signatures = *consensusMsgs
 
 		// add to blockchain
 		nodeCtx.blockchain.add(finalBlock)
+
+		// create cross-tx-responses and send
+		for _, t := range block.Transactions {
+			what := t.whatAmI(nodeCtx)
+			if what == "crosstxresponse" {
+				t.proofOfConsensus = new(ProofOfConsensus)
+				t.proofOfConsensus.GossipHash = block.GossipHash
+				t.proofOfConsensus.IntermediateHash = block.calculateHashExceptMerkleRoot()
+				t.proofOfConsensus.MerkleRoot = block.MerkleRoot
+				// todo add merkleproof
+				t.proofOfConsensus.Signatures = finalBlock.Signatures
+
+				msg := Msg{"transaction", t, nodeCtx.self.Priv.Pub}
+				go routeTx(nodeCtx, msg, txFindClosestCommittee(nodeCtx, t.OrigTxHash))
+			}
+		}
 
 		// increase iteration
 		nodeCtx.i.add()

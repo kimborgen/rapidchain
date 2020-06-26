@@ -1,13 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"math/rand"
 	"net"
+	"time"
 )
 
 func launchNode(flagArgs *FlagArgs) {
 
-	conn := dial("127.0.0.1:8080")
+	conn := dial(coord + ":8080")
 	// start listening. We do this here becuase we need to choose a unique port
 	// number, and send that port number to coordinator so every node has correct port and ip
 	listener, err := net.Listen("tcp", ":0")
@@ -25,10 +28,10 @@ func launchNode(flagArgs *FlagArgs) {
 	if nodeCtx.self.Debug {
 		go debug(nodeCtx)
 	}
+	rand.Seed(69)
 
 	// launch leader election protocol
 	var leaderPub *PubKey = leaderElection(nodeCtx)
-
 	// fmt.Printf("Own: %x, leader: %x\n", nodeCtx.self.Priv.Pub.Bytes, leaderPub.Bytes)
 
 	// If this node is leader then initate ida-gossip
@@ -73,12 +76,15 @@ func nodeHandleConnection(
 	reciveMsg(conn, &msg)
 
 	// determine msg type and msg struct using Msg.typ
+	fmt.Println(msg.Typ)
 	switch msg.Typ {
 	case "IDAGossipMsg":
 		idaMsg, ok := msg.Msg.(IDAGossipMsg)
+		fmt.Println("  ", idaMsg.Typ)
 		notOkErr(ok, "IDAGossipMsg decoding")
 		reconstructed := handleIDAGossipMsg(idaMsg, nodeCtx)
 		if reconstructed {
+
 			switch idaMsg.Typ {
 			case "tx":
 				// reconstruct tx
@@ -95,9 +101,12 @@ func nodeHandleConnection(
 				block.decode(blockByte)
 
 				// TODO verify block
-
-				// Todo add block to Blockchain proposed blocks
 				nodeCtx.blockchain.addProposedBlock(block)
+
+				// gossip crossTxes
+				// don't need to wait untill block is finished because we have verified the block
+				// and since we are honest we expect the block to pass
+				go gossipCrossTxes(nodeCtx, block.Transactions)
 
 			default:
 				errFatal(nil, "Unknown IDAGossipMsg type")
@@ -110,7 +119,10 @@ func nodeHandleConnection(
 
 		// check if the underlying block has been recived
 		if !nodeCtx.blockchain.isProposedBlock(cMsg.GossipHash) {
-			errFatal(nil, "ProposedBlock not recivied")
+			time.Sleep(default_delta * 2 * time.Millisecond)
+			if !nodeCtx.blockchain.isProposedBlock(cMsg.GossipHash) {
+				errFatal(nil, "ProposedBlock not recivied")
+			}
 		}
 
 		if cMsg.Tag == "propose" {

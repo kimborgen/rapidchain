@@ -55,6 +55,8 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	var wg_done sync.WaitGroup
 	wg_done.Add(int(flagArgs.n))
 
+	rand.Seed(1337)
+
 	go coordinator(chanToCoordinator, chanToNodes, &wg, flagArgs)
 
 	listener, err := net.Listen("tcp", ":8080")
@@ -122,7 +124,6 @@ func coordinatorHandleConnection(conn net.Conn,
 
 	fmt.Println("waiting for returnMessage")
 	returnMessage := <-chanFromCoordinator
-
 	enc := gob.NewEncoder(conn)
 	err = enc.Encode(returnMessage)
 	ifErrFatal(err, "encoding")
@@ -240,16 +241,20 @@ func coordinator(
 
 	// gen set of idenetites
 	users := genUsers(flagArgs)
-	genesisBlock := genGenesisBlock(flagArgs, users)
+	genesisBlocks := genGenesisBlock(flagArgs, committeeInfos, users)
+
+	// fmt.Println(genesisBlocks)
+	//fmt.Println("gb, ", genesisBlocks[0].proposedBlock.GossipHash)
 
 	rnd := rand.Intn(maxId)
-	msg := ResponseToNodes{nodeInfos, genesisBlock, nodeInfos[0].Pub.Bytes, rnd}
+
+	msg := ResponseToNodes{nodeInfos, genesisBlocks, nodeInfos[0].Pub.Bytes, rnd}
 
 	for _, c := range chanToNodes {
 		c <- msg
 	}
 
-	go txGenerator(flagArgs, nodeInfos, users, genesisBlock)
+	go txGenerator(flagArgs, nodeInfos, users, genesisBlocks)
 }
 
 func coordinatorDebugStatsHandleConnection(conn net.Conn,
