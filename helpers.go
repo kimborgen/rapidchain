@@ -168,5 +168,9 @@ func uintToByte(u uint) []byte {
 }
 
 func bytesToString(b []byte) string {
+	return hex.EncodeToString(b)
+}
+
+func bytes32ToString(b [32]byte) string {
 	return hex.EncodeToString(b[:])
 }
