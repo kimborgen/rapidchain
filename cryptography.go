@@ -27,6 +27,10 @@ type Sig struct {
 	S *big.Int
 }
 
+func (s *Sig) bytes() []byte {
+	return byteSliceAppend(s.R.Bytes(), s.S.Bytes())
+}
+
 func (k *PrivKey) gen() {
 	privKey, err := ecdsa.GenerateKey(eCurve, rand.Reader)
 	ifErrFatal(err, "ecdsa genkey")
@@ -49,7 +53,7 @@ func (k *PubKey) init() {
 }
 
 func (k *PubKey) verify(hashedMsg [32]byte, sig *Sig) bool {
-	return verify(k.Pub, hashedMsg[:], sig)
+	return verify(k.Pub, hashedMsg, sig)
 }
 
 func (k *PubKey) xyBytes() [64]byte {
@@ -67,8 +71,8 @@ func (k *PubKey) string() string {
 	return hex.EncodeToString(k.Bytes[:])
 }
 
-func verify(pubKey *ecdsa.PublicKey, hashedMsg []byte, sig *Sig) bool {
-	return ecdsa.Verify(pubKey, hashedMsg, sig.R, sig.S)
+func verify(pubKey *ecdsa.PublicKey, hashedMsg [32]byte, sig *Sig) bool {
+	return ecdsa.Verify(pubKey, hashedMsg[:], sig.R, sig.S)
 }
 
 func hash(msg []byte) [32]byte {

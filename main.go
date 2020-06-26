@@ -63,6 +63,10 @@ func main() {
 		errFatal(nil, "Default kappa was over 256/1byte")
 	}
 
+	if flagArgs.d > flagArgs.n/flagArgs.m {
+		errFatal(nil, "more neighbours than members in committee")
+	}
+
 	if *functionPtr == "coordinator" {
 		launchCoordinator(&flagArgs)
 	} else {
