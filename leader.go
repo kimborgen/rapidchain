@@ -72,7 +72,7 @@ func leaderElection(nodeCtx *NodeCtx) *PubKey {
 		}
 	}
 
-	if false {
+	if true {
 		// go trough all nodes in system and give the lowest id instead of lowest id in committee
 		for k := range nodeCtx.allInfo {
 			kBI := toBigInt(k)
@@ -83,7 +83,9 @@ func leaderElection(nodeCtx *NodeCtx) *PubKey {
 		}
 	}
 
-	fmt.Println("Leader", lowestID, lowestID == nodeCtx.self.Priv.Pub)
+	fmt.Println("Leader", lowestID == nodeCtx.self.Priv.Pub)
+
+	nodeCtx.committee.CurrentLeader = lowestID
 
 	return lowestID
 }
@@ -115,6 +117,6 @@ func leader(nodeCtx *NodeCtx) {
 	msg := Msg{"consensus", cMsg, nodeCtx.self.Priv.Pub}
 
 	// start consensus rounds.
-	log.Printf("Leader starting conseuss \n")
+	log.Printf("Leader starting conseuss in committee %s\n", bytes32ToString(nodeCtx.committee.ID))
 	sendMsgToCommitteeAndSelf(msg, nodeCtx)
 }

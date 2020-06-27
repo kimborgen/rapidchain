@@ -76,11 +76,11 @@ func nodeHandleConnection(
 	reciveMsg(conn, &msg)
 
 	// determine msg type and msg struct using Msg.typ
-	fmt.Println(msg.Typ)
+	// fmt.Println(msg.Typ)
 	switch msg.Typ {
 	case "IDAGossipMsg":
 		idaMsg, ok := msg.Msg.(IDAGossipMsg)
-		fmt.Println("  ", idaMsg.Typ)
+		// fmt.Println("  ", idaMsg.Typ)
 		notOkErr(ok, "IDAGossipMsg decoding")
 		reconstructed := handleIDAGossipMsg(idaMsg, nodeCtx)
 		if reconstructed {
@@ -89,19 +89,23 @@ func nodeHandleConnection(
 			case "tx":
 				// reconstruct tx
 				txData := nodeCtx.reconstructedIdaMsgs.getData(idaMsg.MerkleRoot)
-				tx := Transaction{}
+				tx := new(Transaction)
 				tx.decode(txData)
 
 				// add tx to pool
-				nodeCtx.txPool.safeAdd(&tx)
+				nodeCtx.txPool.safeAdd(tx)
+				//fmt.Println("Added to txpool")
 			case "block":
 				// ProposedBlock
+				nodeCtx.blockchain.mux.Lock()
 				blockByte := nodeCtx.reconstructedIdaMsgs.getData(idaMsg.MerkleRoot)
 				block := new(ProposedBlock)
 				block.decode(blockByte)
 
 				// TODO verify block
-				nodeCtx.blockchain.addProposedBlock(block)
+				nodeCtx.blockchain._addProposedBlock(block)
+				nodeCtx.blockchain.mux.Unlock()
+				fmt.Printf("Block with gh %s added\n", bytes32ToString(block.GossipHash))
 
 				// gossip crossTxes
 				// don't need to wait untill block is finished because we have verified the block

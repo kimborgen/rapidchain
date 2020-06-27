@@ -52,9 +52,10 @@ type CommitteeMember struct {
 
 // Representation of a committee from the point of view of a node
 type Committee struct {
-	ID       [32]byte
-	BigIntID *big.Int
-	Members  map[[32]byte]CommitteeMember
+	ID            [32]byte
+	BigIntID      *big.Int
+	CurrentLeader *PubKey
+	Members       map[[32]byte]CommitteeMember
 }
 
 func (c *Committee) init(ID [32]byte) {
@@ -314,10 +315,10 @@ func (s *UTXOSet) verifyNonces() {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
-	fmt.Printf("Total len of UTXO set %d\n", len(s.set))
+	// fmt.Printf("Total len of UTXO set %d\n", len(s.set))
 
 	for _, t := range s.set {
-		fmt.Printf("Number of output in tx: %d", len(t))
+		// fmt.Printf("Number of output in tx: %d", len(t))
 		for k, o := range t {
 			if k != o.N {
 				fmt.Printf("\nTxID: %s map nonce N %d and outtx N %d\n", bytesToString(o.PubKey.Bytes[:]), k, o.N)
@@ -636,7 +637,7 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 			nodeCtx.utxoSet._add(t.Hash, out)
 			totOut += out.Value
 
-			fmt.Printf("%s Added UTXO with N %d, Value %d and Pub %s\n", bytesToString(nodeCtx.self.CommitteeID[:]), out.N, out.Value, bytesToString(out.PubKey.Bytes[:]))
+			// fmt.Printf("%s Added UTXO with N %d, Value %d and Pub %s\n", bytesToString(nodeCtx.self.CommitteeID[:]), out.N, out.Value, bytesToString(out.PubKey.Bytes[:]))
 		}
 		// if signatures is nil, then this is the genesis block
 		if b.Signatures != nil && tot != totOut {
@@ -909,7 +910,7 @@ func (b *Blockchain) _isProposedBlock(gossipHash [32]byte) bool {
 
 func (b *Blockchain) isProposedBlock(gossipHash [32]byte) bool {
 	b.mux.Lock()
-	b.mux.Unlock()
+	defer b.mux.Unlock()
 	return b._isProposedBlock(gossipHash)
 }
 
