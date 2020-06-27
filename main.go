@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"encoding/gob"
 	"flag"
+	"runtime"
 )
 
 func main() {
@@ -67,6 +68,8 @@ func main() {
 		errFatal(nil, "more neighbours than members in committee")
 	}
 
+	runtime.GOMAXPROCS(int(flagArgs.vCPUs))
+
 	if *functionPtr == "coordinator" {
 		launchCoordinator(&flagArgs)
 	} else {
@@ -76,7 +79,7 @@ func main() {
 }
 
 func launchNodes(flagArgs *FlagArgs) {
-	for i := uint(0); i < flagArgs.vCPUs*flagArgs.instances; i++ {
+	for i := uint(0); i < flagArgs.instances; i++ {
 		go launchNode(flagArgs)
 	}
 
