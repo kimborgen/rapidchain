@@ -25,9 +25,9 @@ func launchNode(flagArgs *FlagArgs) {
 	initialRandomness = initialRandomness
 	// launch listener
 	go listen(listener, nodeCtx)
-	if nodeCtx.self.Debug {
-		go debug(nodeCtx)
-	}
+	// if nodeCtx.self.Debug {
+	// 	go debug(nodeCtx)
+	// }
 	rand.Seed(69)
 
 	// launch leader election protocol
@@ -38,11 +38,18 @@ func launchNode(flagArgs *FlagArgs) {
 	if leaderPub.Bytes == nodeCtx.self.Priv.Pub.Bytes {
 		//fmt.Println("\n\n\n", nodeCtx.routingTable, "\n\n\n")
 
+		go debug(nodeCtx)
+
 		// test bytes/big.Int xoring
 
 		// wait untill tx pool is ok large
-		for len(nodeCtx.txPool.pool) < 10 {
-
+		for {
+			l := nodeCtx.txPool.len()
+			if l >= 10 {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+			fmt.Print(l)
 		}
 
 		leader(nodeCtx)
@@ -123,10 +130,23 @@ func nodeHandleConnection(
 
 		// check if the underlying block has been recived
 		if !nodeCtx.blockchain.isProposedBlock(cMsg.GossipHash) {
-			time.Sleep(default_delta * 2 * time.Millisecond)
-			if !nodeCtx.blockchain.isProposedBlock(cMsg.GossipHash) {
-				errFatal(nil, "ProposedBlock not recivied")
+			for {
+				time.Sleep(default_delta * time.Millisecond)
+
+				if nodeCtx.blockchain.isProposedBlock(cMsg.GossipHash) {
+					break
+				}
+
+				fmt.Printf("waiting for proposed block")
 			}
+			fmt.Println("Comittee ", bytes32ToString(nodeCtx.committee.ID))
+			fmt.Println("isLeader?", nodeCtx.committee.CurrentLeader.Bytes == nodeCtx.self.Priv.Pub.Bytes)
+			fmt.Println("len of proposed blocks: ", len(nodeCtx.blockchain.ProposedBlocks))
+			fmt.Println("Gossiphash: ", bytes32ToString(cMsg.GossipHash))
+			fmt.Println("Tag ", cMsg.Tag)
+			fmt.Println("len Idamsgs ", len(nodeCtx.idaMsgs.m))
+			fmt.Println("len r ida ", len(nodeCtx.reconstructedIdaMsgs.m))
+			errFatal(nil, "ProposedBlock not recivied")
 		}
 
 		if cMsg.Tag == "propose" {

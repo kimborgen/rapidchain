@@ -111,9 +111,9 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 		// fmt.Println("Sleeping for ", dur)
 		time.Sleep(dur)
 		i++
-		if i == 21 {
-			return
-		}
+		// if i == 30 {
+		// 	return
+		// }
 	}
 }
 

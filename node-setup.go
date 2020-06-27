@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"math/big"
 	"net"
@@ -69,7 +68,7 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 		// if it, increase length by one to get the last committee in routing table
 		length++
 	}
-	log.Println("Routingtable length: ", length, int(length))
+	//log.Println("Routingtable length: ", length, int(length))
 
 	routingTable.init(int(length))
 
@@ -203,9 +202,9 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 
 	gb := response.GensisisBlocks
 	// fmt.Println(gb)
-	fmt.Println("Len genesis blocks", len(gb))
+	// fmt.Println("Len genesis blocks", len(gb))
 	for _, b := range gb {
-		fmt.Print("this committee ", b.ProposedBlock.CommitteeID == nodeCtx.self.CommitteeID, "\n")
+		// fmt.Print("this committee ", b.ProposedBlock.CommitteeID == nodeCtx.self.CommitteeID, "\n")
 		if b.ProposedBlock.CommitteeID == nodeCtx.self.CommitteeID {
 			b.processBlock(nodeCtx)
 			nodeCtx.blockchain._add(&b)
@@ -220,28 +219,61 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 	return initialRandomness
 }
 
+// builds a list of neighbours of length flagArgs.d where all nodes in a committee is sorted on id and a ring is formed.
+// Each neighbour is of distance 2^i from your id where distance is just index in the sorted members array.
+// this guarantess connectivity, whereas the original random graph where probabilistic (and failed on small sizes)
 func buildCurrentNeighbours(nodeCtx *NodeCtx) {
-
 	currentNeighbours := make([][32]byte, nodeCtx.flagArgs.d)
 
-	// sample list of neighbors
-	indexes := randIndexesWithoutReplacement(len(nodeCtx.committee.Members), int(nodeCtx.flagArgs.d))
+	// selfID := toBigInt(nodeCtx.self.Priv.Pub.Bytes)
+	members := nodeCtx.committee.getMemberIDsAsSortedList()
 
-	i := 0 // index of this memeber
-	c := 0 // index of neighbor
-	for k := range nodeCtx.committee.Members {
-		for j := range indexes { // check if this members index is in indexe
-			if i == j {
-				// Now make sure that you are not part of this set.
-				if k == nodeCtx.self.Priv.Pub.Bytes {
-					errFatal(nil, "You where in the set of committee members")
-				}
-				currentNeighbours[c] = k
-				c += 1
-			}
+	// copy array and append self
+	membersCopy := make([][32]byte, len(members)+1)
+	copy(membersCopy, members)
+	membersCopy[len(members)] = nodeCtx.self.Priv.Pub.Bytes
+
+	// sort new array
+	sort.Slice(membersCopy, func(i, j int) bool {
+		return toBigInt(membersCopy[i]).Cmp(toBigInt(membersCopy[j])) < 0
+	})
+
+	// find you index
+	var selfIndex int
+	for i, m := range membersCopy {
+		if m == nodeCtx.self.Priv.Pub.Bytes {
+			selfIndex = i
 		}
-		i += 1
 	}
+
+	// since self have inserted himself then the next neighbor to self is the index, but in the original members array
+	// therefor begin constructing at that index
+	taken := make(map[int]bool)
+	for i := uint(0); i < nodeCtx.flagArgs.d; i++ {
+		dist := (int(math.Pow(2, float64(i))) - 1 + selfIndex) % len(members)
+		if !taken[dist] {
+			currentNeighbours[i] = members[dist]
+			taken[dist] = true
+		}
+	}
+
+	fmt.Println("\n\nCommittee", bytes32ToString(nodeCtx.self.CommitteeID))
+	fmt.Println("Self id ", bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
+	for i, m := range currentNeighbours {
+		fmt.Printf("Neigh %d id %s\n", i, bytes32ToString(m))
+	}
+
+	// if leaderElection(nodeCtx).Bytes == nodeCtx.self.Priv.Pub.Bytes {
+	// 	// members
+	// 	for i, m := range members {
+	// 		fmt.Printf("m %d %s \n", i, bytes32ToString(m))
+	// 	}
+
+	// 	for i, m := range membersCopy {
+	// 		fmt.Printf("mc %d %s\n", i, bytes32ToString(m))
+	// 	}
+
+	// }
 
 	nodeCtx.neighbors = currentNeighbours
 }

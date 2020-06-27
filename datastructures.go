@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"math/big"
+	"sort"
 	"sync"
 
 	"github.com/kimborgen/go-merkletree"
@@ -76,10 +77,31 @@ func (c *Committee) safeAddMember(m CommitteeMember) bool {
 	return true
 }
 
+func (c *Committee) getMemberIDsAsSortedList() [][32]byte {
+	newList := make([][32]byte, len(c.Members))
+	i := 0
+	for _, v := range c.Members {
+		newList[i] = v.Pub.Bytes
+		i++
+	}
+
+	sort.Slice(newList, func(i, j int) bool {
+		return toBigInt(newList[i]).Cmp(toBigInt(newList[j])) < 0
+	})
+	//fmt.Println("Sorted list: ", newList)
+	return newList
+}
+
 // Recived transactions that have not been included in a block yet
 type TxPool struct {
 	pool map[[32]byte]*Transaction // TxHash -> Transaction
 	mux  sync.Mutex
+}
+
+func (t *TxPool) len() uint {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	return uint(len(t.pool))
 }
 
 func (t *TxPool) init() {
