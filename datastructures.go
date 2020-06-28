@@ -643,14 +643,27 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 	// assume that signatures and so on are valid because the block has gone trough consensus
 	// lock utxoSet because we are going to do a lot of changes that must be atomic with the respect to the block
 	nodeCtx.utxoSet.mux.Lock()
+
+	// we do not want to proccess new cross-tx'es, or original tx'es (UTXO's in original TX are still spendable)
 	for _, t := range b.ProposedBlock.Transactions {
-		var tot uint
-		var totOut uint
+		what := t.whatAmI(nodeCtx)
+		if what == "crosstx" || what == "originaltx" {
+			continue
+		}
+		var tot uint = 0
+		var totOut uint = 0
 		for _, inp := range t.Inputs {
 			// spend inputs
-			UTXO := nodeCtx.utxoSet._get(t.Hash, inp.N)
-			nodeCtx.utxoSet._removeOutput(t.Hash, inp.N)
+			UTXO := nodeCtx.utxoSet._get(inp.TxHash, inp.N)
+
+			// fmt.Println("What ", what)
+			// fmt.Println("UTXO ", UTXO)
+			// fmt.Println("tot ", tot)
+			// fmt.Println("trans ", t)
+			// fmt.Println("inp ", inp)
+
 			tot += UTXO.Value
+			nodeCtx.utxoSet._removeOutput(t.Hash, inp.N)
 		}
 		for i, out := range t.Outputs {
 			if uint(i) != out.N {
@@ -658,7 +671,6 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 			}
 			nodeCtx.utxoSet._add(t.Hash, out)
 			totOut += out.Value
-
 			// fmt.Printf("%s Added UTXO with N %d, Value %d and Pub %s\n", bytesToString(nodeCtx.self.CommitteeID[:]), out.N, out.Value, bytesToString(out.PubKey.Bytes[:]))
 		}
 		// if signatures is nil, then this is the genesis block

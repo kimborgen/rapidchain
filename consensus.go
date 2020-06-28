@@ -177,6 +177,9 @@ func handleConsensusAccept(
 		// add to blockchain
 		nodeCtx.blockchain.add(finalBlock)
 
+		// process block
+		finalBlock.processBlock(nodeCtx)
+
 		// create cross-tx-responses and send
 		for _, t := range block.Transactions {
 			what := t.whatAmI(nodeCtx)
