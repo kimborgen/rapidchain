@@ -161,6 +161,7 @@ func handleIDAGossipMsg(
 		errr(nil, "number of proofs not matching amount of chunks")
 		return false
 	}
+
 	for i, _ := range idaMsg.Chunks {
 		root := make([]byte, 32)
 		for i, elem := range idaMsg.MerkleRoot {
@@ -175,10 +176,13 @@ func handleIDAGossipMsg(
 	}
 
 	// check if merkleRoot is new
-	if ok := nodeCtx.idaMsgs.isArr(idaMsg.MerkleRoot); !ok {
-		nodeCtx.idaMsgs.add(idaMsg.MerkleRoot, idaMsg)
+	nodeCtx.idaMsgs.mux.Lock()
+	if ok := nodeCtx.idaMsgs._isArr(idaMsg.MerkleRoot); !ok {
+		nodeCtx.idaMsgs._add(idaMsg.MerkleRoot, idaMsg)
+		nodeCtx.idaMsgs.mux.Unlock()
 		gossipSend(idaMsg, nodeCtx)
 	} else {
+		nodeCtx.idaMsgs.mux.Unlock()
 		// check if the message is unique
 		for _, newProof := range idaMsg.Proofs {
 			for _, existingMsg := range nodeCtx.idaMsgs.getMsgs(idaMsg.MerkleRoot) {
@@ -205,9 +209,10 @@ func handleIDAGossipMsg(
 					index := elem.Proofs[i].Index
 
 					// check if that location in data is not allready filled
-					if data[index] != nil {
-						errFatal(nil, "there was two equal chunks")
-					}
+					// doesnt really matter tho
+					// if data[index] != nil {
+					// 	errFatal(nil, "there was two equal chunks")
+					// }
 
 					data[index] = chunk
 				}

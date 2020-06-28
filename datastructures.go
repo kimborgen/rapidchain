@@ -1036,38 +1036,52 @@ func (ida *IdaMsgs) init() {
 	ida.m = make(map[[32]byte][]IDAGossipMsg)
 }
 
-func (ida *IdaMsgs) isArr(root [32]byte) bool {
-	ida.mux.Lock()
-	defer ida.mux.Unlock()
+func (ida *IdaMsgs) _isArr(root [32]byte) bool {
 	_, ok := ida.m[root]
 	return ok
 }
 
-func (ida *IdaMsgs) add(root [32]byte, m IDAGossipMsg) {
+func (ida *IdaMsgs) isArr(root [32]byte) bool {
 	ida.mux.Lock()
+	defer ida.mux.Unlock()
+	return ida._isArr(root)
+}
+
+func (ida *IdaMsgs) _add(root [32]byte, m IDAGossipMsg) {
 	if arr, ok := ida.m[root]; !ok {
 		ida.m[root] = []IDAGossipMsg{m}
 	} else {
 		ida.m[root] = append(arr, m)
 	}
+}
+
+func (ida *IdaMsgs) add(root [32]byte, m IDAGossipMsg) {
+	ida.mux.Lock()
+	ida._add(root, m)
 	ida.mux.Unlock()
+}
+
+func (ida *IdaMsgs) _getMsg(root [32]byte, index uint) IDAGossipMsg {
+	return ida.m[root][index]
 }
 
 func (ida *IdaMsgs) getMsg(root [32]byte, index uint) IDAGossipMsg {
 	ida.mux.Lock()
 	defer ida.mux.Unlock()
-	return ida.m[root][index]
+	return ida._getMsg(root, index)
+}
+
+func (ida *IdaMsgs) _getMsgs(root [32]byte) []IDAGossipMsg {
+	return ida.m[root]
 }
 
 func (ida *IdaMsgs) getMsgs(root [32]byte) []IDAGossipMsg {
 	ida.mux.Lock()
 	defer ida.mux.Unlock()
-	return ida.m[root]
+	return ida._getMsgs(root)
 }
 
-func (ida *IdaMsgs) getLenOfChunks(root [32]byte) int {
-	ida.mux.Lock()
-	defer ida.mux.Unlock()
+func (ida *IdaMsgs) _getLenOfChunks(root [32]byte) int {
 	var totalChunks int
 	for _, msg := range ida.m[root] {
 		totalChunks += len(msg.Chunks)
@@ -1075,10 +1089,20 @@ func (ida *IdaMsgs) getLenOfChunks(root [32]byte) int {
 	return totalChunks
 }
 
+func (ida *IdaMsgs) getLenOfChunks(root [32]byte) int {
+	ida.mux.Lock()
+	defer ida.mux.Unlock()
+	return ida._getLenOfChunks(root)
+}
+
+func (ida *IdaMsgs) _getLen() uint {
+	return uint(len(ida.m))
+}
+
 func (ida *IdaMsgs) getLen() uint {
 	ida.mux.Lock()
 	defer ida.mux.Unlock()
-	return uint(len(ida.m))
+	return ida._getLen()
 }
 
 type ReconstructedIdaMsgs struct {
