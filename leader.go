@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"time"
@@ -54,7 +55,57 @@ func createProposeBlock(nodeCtx *NodeCtx) *ProposedBlock {
 	return block
 }
 
-func leaderElection(nodeCtx *NodeCtx) *PubKey {
+type byte32sortHelper struct {
+	original [32]byte
+	toSort   [32]byte
+}
+
+// finds current leader of comittee, using epoch randomness and iteration number
+func leaderElection(nodeCtx *NodeCtx) {
+	// The paper doesnt specifically mention any leader election protocols, so we assume that the leader election protocol
+	// used in bootstrap is also used in the normal protocol, with the adition of iteration (unless the same leader would
+	// be selected).
+
+	// TODO actually add a setup phase where one must publish their hash. This way there will always
+	// be a leader even if some nodes are offline. But with the assumption that every node is online
+	// this works fine.
+
+	// get current randomness
+	recBlock := nodeCtx.blockchain.getLastReconfigurationBlock()
+	rnd := recBlock.Randomness
+
+	// get current iteration
+	_currIteration := nodeCtx.i.getI()
+	currI := make([]byte, 8)
+	binary.LittleEndian.PutUint64(currI, uint64(_currIteration))
+
+	listOfHashes := make([]byte32sortHelper, len(nodeCtx.committee.Members))
+	// calculate hash(id | rnd | currI) for every member
+	ii := 0
+	for k := range nodeCtx.committee.Members {
+		connoctated := byteSliceAppend(k[:], rnd[:], currI)
+		hsh := hash(connoctated)
+		listOfHashes[ii] = byte32sortHelper{k, hsh}
+		ii++
+	}
+
+	// sort list
+	listOfHashes = sortListOfByte32SortHelper(listOfHashes)
+
+	// calculate hash of self
+	selfHash := hash(byteSliceAppend(nodeCtx.self.Priv.Pub.Bytes[:], rnd[:], currI))
+
+	// the leader is the lowest in list except if selfHash is lower than that.
+	if byte32Operations(selfHash, "<", listOfHashes[0].toSort) {
+		log.Println("I am leader!")
+		nodeCtx.committee.CurrentLeader = nodeCtx.self.Priv.Pub
+	} else {
+		leader := listOfHashes[0].original
+		nodeCtx.committee.CurrentLeader = nodeCtx.committee.Members[leader].Pub
+	}
+}
+
+func basicLeaderElection(nodeCtx *NodeCtx) *PubKey {
 	// Find out who is the leader, returns ID of leader
 	// For now just pick the one with the lowest ID.
 	// TODO: create an actual leader election protocol based on epoch randomness and nonce, assume every node is online
@@ -72,7 +123,7 @@ func leaderElection(nodeCtx *NodeCtx) *PubKey {
 		}
 	}
 
-	if true {
+	if false {
 		// go trough all nodes in system and give the lowest id instead of lowest id in committee
 		for k := range nodeCtx.allInfo {
 			kBI := toBigInt(k)

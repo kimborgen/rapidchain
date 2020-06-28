@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
+func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 	// setup with the help of coordinator
 
 	// generate a key
@@ -27,7 +27,7 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 	// declare variables to return
 	allInfo := make(map[[32]byte]NodeAllInfo)
 	var selfInfo SelfInfo
-	var initialRandomness int
+	var initialRandomness [32]byte
 	var currentCommittee Committee
 	var routingTable RoutingTable
 
@@ -200,6 +200,11 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 	nodeCtx.blockchain = Blockchain{}
 	nodeCtx.blockchain.init(selfInfo.CommitteeID)
 
+	// TODO add real reconfiguration block
+	recBlock := new(ReconfigurationBlock)
+	recBlock.Randomness = initialRandomness
+	nodeCtx.blockchain.addRecBlock(recBlock)
+
 	gb := response.GensisisBlocks
 	// fmt.Println(gb)
 	// fmt.Println("Len genesis blocks", len(gb))
@@ -215,8 +220,6 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) int {
 	nodeCtx.utxoSet.verifyNonces()
 
 	buildCurrentNeighbours(nodeCtx)
-
-	return initialRandomness
 }
 
 // builds a list of neighbours of length flagArgs.d where all nodes in a committee is sorted on id and a ring is formed.

@@ -21,8 +21,8 @@ func launchNode(flagArgs *FlagArgs) {
 
 	nodeCtx := new(NodeCtx)
 	nodeCtx.flagArgs = *flagArgs
-	initialRandomness := coordinatorSetup(conn, portNumber, nodeCtx)
-	initialRandomness = initialRandomness
+	coordinatorSetup(conn, portNumber, nodeCtx)
+
 	// launch listener
 	go listen(listener, nodeCtx)
 	// if nodeCtx.self.Debug {
@@ -31,11 +31,11 @@ func launchNode(flagArgs *FlagArgs) {
 	rand.Seed(69)
 
 	// launch leader election protocol
-	var leaderPub *PubKey = leaderElection(nodeCtx)
+	leaderElection(nodeCtx)
 	// fmt.Printf("Own: %x, leader: %x\n", nodeCtx.self.Priv.Pub.Bytes, leaderPub.Bytes)
 
 	// If this node is leader then initate ida-gossip
-	if leaderPub.Bytes == nodeCtx.self.Priv.Pub.Bytes {
+	if nodeCtx.committee.CurrentLeader.Bytes == nodeCtx.self.Priv.Pub.Bytes {
 		//fmt.Println("\n\n\n", nodeCtx.routingTable, "\n\n\n")
 
 		go debug(nodeCtx)

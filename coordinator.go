@@ -246,9 +246,12 @@ func coordinator(
 	// fmt.Println(genesisBlocks)
 	//fmt.Println("gb, ", genesisBlocks[0].proposedBlock.GossipHash)
 
-	rnd := rand.Intn(maxId)
+	// create initial randomness
+	rnd := make([]byte, 32)
+	rand.Read(rnd)
+	initialRandomness := hash(rnd)
 
-	msg := ResponseToNodes{nodeInfos, genesisBlocks, nodeInfos[0].Pub.Bytes, rnd}
+	msg := ResponseToNodes{nodeInfos, genesisBlocks, nodeInfos[0].Pub.Bytes, initialRandomness}
 
 	for _, c := range chanToNodes {
 		c <- msg

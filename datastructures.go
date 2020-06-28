@@ -42,7 +42,7 @@ type ResponseToNodes struct {
 	Nodes            []NodeAllInfo
 	GensisisBlocks   []FinalBlock
 	DebugNode        [32]byte
-	InitalRandomness int
+	InitalRandomness [32]byte
 }
 
 // Representation of a member beloning to the current committee of a node
@@ -665,10 +665,11 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 			tot += UTXO.Value
 			nodeCtx.utxoSet._removeOutput(t.Hash, inp.N)
 		}
-		for i, out := range t.Outputs {
-			if uint(i) != out.N {
-				errr(nil, "\n\noutput should be sorted\n\n")
-			}
+		for _, out := range t.Outputs {
+
+			// if uint(i) != out.N {
+			// 	errr(nil, "\n\noutput should be sorted\n\n")
+			// }
 			nodeCtx.utxoSet._add(t.Hash, out)
 			totOut += out.Value
 			// fmt.Printf("%s Added UTXO with N %d, Value %d and Pub %s\n", bytesToString(nodeCtx.self.CommitteeID[:]), out.N, out.Value, bytesToString(out.PubKey.Bytes[:]))
@@ -808,7 +809,11 @@ func (cMsgs *ConsensusMsgs) countValidVotes(gh [32]byte, nodeCtx *NodeCtx) int {
 	currentI := nodeCtx.i.getI()
 
 	// get iteration of ProposedBlock
-	pBlockI := nodeCtx.blockchain.getProposedBlock(gh).Iteration
+	pBlock := nodeCtx.blockchain.getProposedBlock(gh)
+	if pBlock == nil {
+		return -1
+	}
+	pBlockI := pBlock.Iteration
 
 	votes := 0
 	for _, v := range cMsgs.m[gh] {
@@ -850,9 +855,10 @@ func (cMsgs *ConsensusMsgs) getLen(gh [32]byte) uint {
 
 // Todo define, extend and create reconfiguration block
 type ReconfigurationBlock struct {
-	Hash        [32]byte
-	CommitteeID [32]byte
-	Members     map[[32]byte]*CommitteeMember
+	Hash         [32]byte
+	CommitteeIDs [][32]byte
+	Members      map[[32]byte]*CommitteeMember
+	Randomness   [32]byte
 }
 
 type Blockchain struct {
@@ -998,6 +1004,16 @@ func (b *Blockchain) safeAddRecBlock(block *ReconfigurationBlock) bool {
 	}
 	b._addRecBlock(block)
 	return true
+}
+
+func (b *Blockchain) _getLastReconfigurationBlock() *ReconfigurationBlock {
+	return b.ReconfigurationBlocks[len(b.ReconfigurationBlocks)-1]
+}
+
+func (b *Blockchain) getLastReconfigurationBlock() *ReconfigurationBlock {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	return b._getLastReconfigurationBlock()
 }
 
 // routing table
