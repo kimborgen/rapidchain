@@ -900,6 +900,17 @@ func (b *Blockchain) safeAdd(block *FinalBlock) bool {
 	return b._safeAdd(block)
 }
 
+func (b *Blockchain) _isBlock(gh [32]byte) bool {
+	_, ok := b.Blocks[gh]
+	return ok
+}
+
+func (b *Blockchain) isBlock(gh [32]byte) bool {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	return b._isBlock(gh)
+}
+
 func (b *Blockchain) _getProposedBlock(gh [32]byte) *ProposedBlock {
 	if !b._isProposedBlock(gh) {
 		return nil

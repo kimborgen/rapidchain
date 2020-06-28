@@ -128,25 +128,40 @@ func nodeHandleConnection(
 		cMsg, ok := msg.Msg.(ConsensusMsg)
 		notOkErr(ok, "ConsensusSignature decoding")
 
+		// check if we allready have accepted the block
+		if nodeCtx.blockchain.isBlock(cMsg.GossipHash) {
+			log.Println("Block allready accepted")
+			// TODO add signature maybe?
+			return
+		}
+
 		// check if the underlying block has been recived
 		if !nodeCtx.blockchain.isProposedBlock(cMsg.GossipHash) {
+			timeout := 0
+			var found bool = false
 			for {
 				time.Sleep(default_delta * time.Millisecond)
-
 				if nodeCtx.blockchain.isProposedBlock(cMsg.GossipHash) {
+					found = true
 					break
 				}
-
-				fmt.Printf("waiting for proposed block")
+				timeout++
+				fmt.Printf("waiting for proposed block %d\n", timeout)
+				if timeout > 10 {
+					break
+				}
 			}
-			fmt.Println("Comittee ", bytes32ToString(nodeCtx.committee.ID))
-			fmt.Println("isLeader?", nodeCtx.committee.CurrentLeader.Bytes == nodeCtx.self.Priv.Pub.Bytes)
-			fmt.Println("len of proposed blocks: ", len(nodeCtx.blockchain.ProposedBlocks))
-			fmt.Println("Gossiphash: ", bytes32ToString(cMsg.GossipHash))
-			fmt.Println("Tag ", cMsg.Tag)
-			fmt.Println("len Idamsgs ", len(nodeCtx.idaMsgs.m))
-			fmt.Println("len r ida ", len(nodeCtx.reconstructedIdaMsgs.m))
-			errFatal(nil, "ProposedBlock not recivied")
+			if !found {
+				fmt.Println("Comittee ", bytes32ToString(nodeCtx.committee.ID))
+				fmt.Println("Selfid ", bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
+				fmt.Println("isLeader?", nodeCtx.committee.CurrentLeader.Bytes == nodeCtx.self.Priv.Pub.Bytes)
+				fmt.Println("len of proposed blocks: ", len(nodeCtx.blockchain.ProposedBlocks))
+				fmt.Println("Gossiphash: ", bytes32ToString(cMsg.GossipHash))
+				fmt.Println("Tag ", cMsg.Tag)
+				fmt.Println("len Idamsgs ", len(nodeCtx.idaMsgs.m))
+				fmt.Println("len r ida ", len(nodeCtx.reconstructedIdaMsgs.m))
+				errFatal(nil, "ProposedBlock not recivied")
+			}
 		}
 
 		if cMsg.Tag == "propose" {
