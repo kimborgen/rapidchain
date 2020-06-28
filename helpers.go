@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"math/big"
 	"math/rand"
@@ -173,4 +174,39 @@ func bytesToString(b []byte) string {
 
 func bytes32ToString(b [32]byte) string {
 	return hex.EncodeToString(b[:])
+}
+
+// sort a list of [32]byte
+func sortListOf32Byte(lst [][32]byte) [][32]byte {
+	sort.Slice(lst, func(i, j int) bool {
+		return toBigInt((lst)[i]).Cmp(toBigInt((lst)[j])) < 0
+	})
+	return lst
+}
+
+func sortListOfByte32SortHelper(lst []byte32sortHelper) []byte32sortHelper {
+	sort.Slice(lst, func(i, j int) bool {
+		return toBigInt(lst[i].toSort).Cmp(toBigInt(lst[j].toSort)) < 0
+	})
+	return lst
+}
+
+func byte32Operations(a [32]byte, operator string, b [32]byte) bool {
+	ai := toBigInt(a)
+	bi := toBigInt(b)
+	switch operator {
+	case "<":
+		return ai.Cmp(bi) < 0
+	case ">":
+		return ai.Cmp(bi) > 0
+	case "==":
+		return ai.Cmp(bi) == 0
+	case ">=":
+		return ai.Cmp(bi) >= 0
+	case "<=":
+		return ai.Cmp(bi) <= 0
+	default:
+		errFatal(nil, fmt.Sprintf("unknown [32]byte operation %s", operator))
+		return false
+	}
 }
