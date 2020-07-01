@@ -29,31 +29,7 @@ func launchNode(flagArgs *FlagArgs) {
 	// 	go debug(nodeCtx)
 	// }
 	rand.Seed(69)
-
-	// launch leader election protocol
-	leaderElection(nodeCtx)
-	// fmt.Printf("Own: %x, leader: %x\n", nodeCtx.self.Priv.Pub.Bytes, leaderPub.Bytes)
-
-	// If this node is leader then initate ida-gossip
-	if nodeCtx.committee.CurrentLeader.Bytes == nodeCtx.self.Priv.Pub.Bytes {
-		//fmt.Println("\n\n\n", nodeCtx.routingTable, "\n\n\n")
-
-		go debug(nodeCtx)
-
-		// test bytes/big.Int xoring
-
-		// wait untill tx pool is ok large
-		for {
-			l := nodeCtx.txPool.len()
-			if l >= 10 {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-			fmt.Print(l)
-		}
-
-		leader(nodeCtx)
-	}
+	startNewIteration(nodeCtx)
 
 	// blocker
 	for {
