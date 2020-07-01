@@ -208,6 +208,21 @@ func (ctp *CrossTxPool) add(origTxID [32]byte, inputTxID [32]byte) {
 // 	errFatal(nil, "CrossTxPool not defined addResponse")
 // }
 
+// adds a transaction to pool
+func (ctp *CrossTxPool) addOriginalTx(nodeCtx *NodeCtx, tx *Transaction) {
+	// assuming transaction.whatAmI == originaltx
+	if _, ok := ctp.set[tx.OrigTxHash]; !ok {
+		ctp.set[tx.OrigTxHash] = make(map[[32]byte]CrossTxMap)
+	}
+	for _, inp := range tx.Inputs {
+		if txFindClosestCommittee(nodeCtx, inp.TxHash) == nodeCtx.committee.ID {
+			ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: true, CrossTxResponseID: tx.OrigTxHash, Nonce: inp.N}
+		} else {
+			ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: false}
+		}
+	}
+}
+
 func (ctp *CrossTxPool) addResponses(crossTxResponse *Transaction) {
 	ctp.mux.Lock()
 	defer ctp.mux.Unlock()
@@ -662,37 +677,83 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 	// we do not want to proccess new cross-tx'es, or original tx'es (UTXO's in original TX are still spendable)
 	for _, t := range b.ProposedBlock.Transactions {
 		what := t.whatAmI(nodeCtx)
-		if what == "crosstx" || what == "originaltx" {
-			continue
-		}
-		var tot uint = 0
-		var totOut uint = 0
-		for _, inp := range t.Inputs {
+		if what == "normal" {
+			var tot uint = 0
+			var totOut uint = 0
 			// spend inputs
-			UTXO := nodeCtx.utxoSet._get(inp.TxHash, inp.N)
+			for _, inp := range t.Inputs {
+				UTXO := nodeCtx.utxoSet._getAndRemove(inp.TxHash, inp.N)
+				tot += UTXO.Value
+			}
+			for _, out := range t.Outputs {
+				nodeCtx.utxoSet._add(t.Hash, out)
+				totOut += out.Value
+				// fmt.Printf("%s Added UTXO with N %d, Value %d and Pub %s\n", bytesToString(nodeCtx.self.CommitteeID[:]), out.N, out.Value, bytesToString(out.PubKey.Bytes[:]))
+			}
+			// if signatures is nil, then this is the genesis block
+			// check if total input == total output, except if this is the gensis block (then signatures will be nil)
+			if tot != totOut && b.Signatures != nil {
+				errFatal(nil, fmt.Sprintf("Spent value %d not equal to new unspent value %d", tot, totOut))
+			}
+		} else if what == "crosstx" {
+			// do nothing (no inputs in this committee)
+			continue
+		} else if what == "originaltx" {
+			// add inputs to special map so we can keep track of originalTx and its cross-txes
+			nodeCtx.crossTxPool.addOriginalTx(nodeCtx, t)
+			continue
+		} else if what == "crosstxresponse" {
+			// spend inputs, but do not add outputs, because they belong in another committee
+			for _, inp := range t.Inputs {
+				nodeCtx.utxoSet._removeOutput(inp.TxHash, inp.N)
+			}
+			continue
+		} else if what == "finaltransaction" {
+			// get crossTxMap
+			// all inputs in crossTxMap corresponds to finaltransaction and original transaction
+			crossMap := nodeCtx.crossTxPool.getMap(t.OrigTxHash)
+			original := nodeCtx.crossTxPool.getOriginal(t.OrigTxHash)
+			if crossMap == nil || original == nil {
+				errFatal(nil, fmt.Sprint("Crosstxmap or original was nil", crossMap, original))
+			}
 
-			// fmt.Println("What ", what)
-			// fmt.Println("UTXO ", UTXO)
-			// fmt.Println("tot ", tot)
-			// fmt.Println("trans ", t)
-			// fmt.Println("inp ", inp)
+			// outputs should be exactly the same in final and original
+			for _, out := range t.Outputs {
+				var found bool = false
+				for _, origOut := range original.Outputs {
+					if out.Value == origOut.Value && out.N == origOut.N && out.PubKey.Bytes == origOut.PubKey.Bytes {
+						found = true
+						break
+					}
+				}
+				if !found {
+					errFatal(nil, "outputs not equal")
+				}
+			}
 
-			tot += UTXO.Value
-			nodeCtx.utxoSet._removeOutput(t.Hash, inp.N)
-		}
-		for _, out := range t.Outputs {
+			var tot uint = 0
+			var totOut uint = 0
+			// spend inputs
+			for _, inp := range t.Inputs {
+				UTXO := nodeCtx.utxoSet._getAndRemove(inp.TxHash, inp.N)
+				tot += UTXO.Value
+			}
 
-			// if uint(i) != out.N {
-			// 	errr(nil, "\n\noutput should be sorted\n\n")
-			// }
-			nodeCtx.utxoSet._add(t.Hash, out)
-			totOut += out.Value
-			// fmt.Printf("%s Added UTXO with N %d, Value %d and Pub %s\n", bytesToString(nodeCtx.self.CommitteeID[:]), out.N, out.Value, bytesToString(out.PubKey.Bytes[:]))
+			// add outputs
+			for _, out := range t.Outputs {
+				nodeCtx.utxoSet._add(t.Hash, out)
+				totOut += out.Value
+			}
+
+			if tot != totOut {
+				errFatal(nil, fmt.Sprintf("finaltransaction: Spent value %d not equal to new unspent value %d", tot, totOut))
+			}
+
+			// remove original tx and crosstxmap from crossTxPool
+			nodeCtx.crossTxPool.removeOriginal(t.OrigTxHash)
+			nodeCtx.crossTxPool.removeMap(t.OrigTxHash)
 		}
-		// if signatures is nil, then this is the genesis block
-		if b.Signatures != nil && tot != totOut {
-			errFatal(nil, fmt.Sprintf("Spent value %d not equal to new unspent value %d", tot, totOut))
-		}
+
 	}
 	nodeCtx.utxoSet.mux.Unlock()
 }
