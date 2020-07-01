@@ -55,6 +55,29 @@ func createProposeBlock(nodeCtx *NodeCtx) *ProposedBlock {
 	return block
 }
 
+// Start a completly new iteration. With leader election and if you are leader, perform leader duties.
+func startNewIteration(nodeCtx *NodeCtx) {
+	// launch leader election protocol
+	leaderElection(nodeCtx)
+
+	// If this node is leader then initate leader protocol
+	if nodeCtx.committee.CurrentLeader.Bytes == nodeCtx.self.Priv.Pub.Bytes {
+
+		go debug(nodeCtx)
+
+		// wait untill tx pool is large enough
+		for {
+			l := nodeCtx.txPool.len()
+			if l >= 10 {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+			fmt.Print(l)
+		}
+		leader(nodeCtx)
+	}
+}
+
 type byte32sortHelper struct {
 	original [32]byte
 	toSort   [32]byte

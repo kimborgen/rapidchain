@@ -199,6 +199,9 @@ func handleConsensusAccept(
 		// increase iteration
 		nodeCtx.i.add()
 		log.Println("Accept sucess!")
+
+		// start new iteration
+		startNewIteration(nodeCtx)
 	} else {
 		// not enough accepts, terminate
 		// TODO add coordinator feedback here
