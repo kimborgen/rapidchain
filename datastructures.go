@@ -428,27 +428,30 @@ func (s *UTXOSet) totalValue() uint {
 }
 
 // only to be used if you own all UTXO's
-func (s *UTXOSet) getOutputsToFillValue(value uint) (*[]txIDNonceTuple, bool) {
+func (s *UTXOSet) getOutputsToFillValue(value uint) ([]*txIDNonceTuple, bool) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
-	res := []txIDNonceTuple{}
+	res := []*txIDNonceTuple{}
 	var remV int = int(value)
 	for txID := range s.set {
 		for nonce := range s.set[txID] {
 			v := s.set[txID][nonce].Value
 			remV -= int(v)
+			tnp := new(txIDNonceTuple)
+			tnp.txID = txID
+			tnp.n = nonce
 			if remV > 0 {
 				// take entire output
-				res = append(res, txIDNonceTuple{txID, nonce})
+				res = append(res, tnp)
 			} else {
 				// take only the required amount
-				res = append(res, txIDNonceTuple{txID, nonce})
-				return &res, true
+				res = append(res, tnp)
+				return res, true
 			}
 		}
 	}
 	// did not find enough outputs to fill value
-	return &res, false
+	return res, false
 }
 
 type txIDNonceTuple struct {

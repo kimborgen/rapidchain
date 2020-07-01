@@ -305,7 +305,7 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 				// some inputs did not belong to this committee
 				//toCrossTxes[t.Hash] = t
 				log.Println("Normal transaction, some inputs not in this committee")
-				newCrossTxes := processTransactionWithUnknowInputs(nodeCtx, t, spentUTXOSet)
+				newCrossTxes := processTransactionWithUnknowInputs(nodeCtx, t, spentUTXOSet, addedUTXOSet)
 				log.Println("Len of new cross-txes ", len(newCrossTxes))
 				if newCrossTxes != nil {
 					processedTxes = append(processedTxes, t)
@@ -316,7 +316,7 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 			// cross tx
 			//incommingCrossTxes[t.OrigTxHash] = t
 			log.Println("Incomming cross-tx")
-			ok := processIncommingCrossTx(nodeCtx, t, spentUTXOSet)
+			ok := processIncommingCrossTx(nodeCtx, t, spentUTXOSet, addedUTXOSet)
 			if ok {
 				log.Println("Cross-tx accepted")
 				processedTxes = append(processedTxes, t)
@@ -432,10 +432,10 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	return newTx, true
 }
 
-func processIncommingCrossTx(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTXOSet) bool {
+func processIncommingCrossTx(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTXOSet, addedUTXOSet *UTXOSet) bool {
 	// validate inputs.
 	for _, inp := range t.Inputs {
-		if !validateInput(nodeCtx, inp, t.OrigTxHash, spentUTXOSet) {
+		if !validateInput(nodeCtx, inp, t.OrigTxHash, spentUTXOSet, addedUTXOSet) {
 			log.Println("Incoming cross-tx input not valid")
 			fmt.Println(t)
 			fmt.Println(bytes32ToString(t.Hash))
@@ -464,10 +464,15 @@ func processIncommingCrossTx(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTX
 	// set a new hash
 	t.setHash()
 
+	// add newOuts to addedUTXOSet
+	for _, out := range newOuts {
+		addedUTXOSet.add(t.Hash, out)
+	}
+
 	return true
 }
 
-func processTransactionWithUnknowInputs(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTXOSet) []*Transaction {
+func processTransactionWithUnknowInputs(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTXOSet, addedUTXOSet *UTXOSet) []*Transaction {
 	// validate known inputs (but do not spend!)
 	// create cross-tx for rest
 
@@ -484,7 +489,7 @@ func processTransactionWithUnknowInputs(nodeCtx *NodeCtx, t *Transaction, spentU
 			}
 		} else {
 			// in this committe, validate
-			if !validateInput(nodeCtx, inp, t.id(), spentUTXOSet) {
+			if !validateInput(nodeCtx, inp, t.id(), spentUTXOSet, addedUTXOSet) {
 				log.Println("input not valid")
 				return nil
 			}
@@ -527,12 +532,22 @@ func spendInputToNewOutput(nodeCtx *NodeCtx, iTx *InTx, spentUTXOSet *UTXOSet) *
 	return outTx
 }
 
-func validateInput(nodeCtx *NodeCtx, iTx *InTx, txID [32]byte, spentUTXOSet *UTXOSet) bool {
+func validateInput(nodeCtx *NodeCtx, iTx *InTx, txID [32]byte, spentUTXOSet *UTXOSet, addedUTXOSet *UTXOSet) bool {
+
+	// check if output is not allready spent
+	if spentUTXOSet.get(iTx.TxHash, iTx.N) != nil {
+		log.Println("UTXO allready spent")
+		return false
+	}
+
 	// check wheter or not inputs have a corresponding UTXO
 	outTx := nodeCtx.utxoSet.get(iTx.TxHash, iTx.N)
 	if outTx == nil {
-		log.Println("No UTXO on this input")
-		return false
+		outTx = addedUTXOSet.get(iTx.TxHash, iTx.N)
+		if outTx == nil {
+			log.Println("No UTXO on this input")
+			return false
+		}
 	}
 
 	// check signature
@@ -549,11 +564,6 @@ func validateInput(nodeCtx *NodeCtx, iTx *InTx, txID [32]byte, spentUTXOSet *UTX
 		return false
 	}
 
-	// check if output is not allready spent
-	if spentUTXOSet.get(iTx.TxHash, iTx.N) != nil {
-		log.Println("UTXO allready spent")
-		return false
-	}
 	return true
 }
 

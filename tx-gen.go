@@ -82,10 +82,6 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 		return
 	}
 
-	// generate and send transaction loop
-	set := new(UTXOSet)
-	set.init()
-
 	// make a UTXO set for each user, such that we can easily look up UTXO for each user
 	userSets := make(map[[32]byte]*UTXOSet)
 	for _, u := range *users {
@@ -96,9 +92,8 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 
 	// add gensis block output to the main UTXO set
 	for _, b := range gensisBlocks {
-		for _, t := range b.ProposedBlock.Transactions[0].Outputs {
-			set.add(b.ProposedBlock.GossipHash, t)
-			userSets[t.PubKey.Bytes].add(b.ProposedBlock.GossipHash, t)
+		for _, out := range b.ProposedBlock.Transactions[0].Outputs {
+			userSets[out.PubKey.Bytes].add(b.ProposedBlock.Transactions[0].Hash, out)
 		}
 	}
 
@@ -106,7 +101,7 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	time.Sleep(3 * time.Second)
 	rand.Seed(42)
 	for {
-		go _txGenerator(flagArgs, &allNodes, users, set, &userSets)
+		go _txGenerator(flagArgs, &allNodes, users, userSets)
 		dur := time.Second / time.Duration(flagArgs.tps)
 		// fmt.Println("Sleeping for ", dur)
 		time.Sleep(dur)
@@ -117,7 +112,7 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	}
 }
 
-func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey, set *UTXOSet, userSets *map[[32]byte]*UTXOSet) {
+func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey, userSets map[[32]byte]*UTXOSet) {
 	//fmt.Println("_txGen")
 
 	// pick random user to send transaction from
@@ -125,17 +120,16 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	user := (*users)[rnd]
 
 	// pick a random value from the users total value
-	userSet := (*userSets)[user.Pub.Bytes]
-	totVal := userSet.totalValue()
+	totVal := userSets[user.Pub.Bytes].totalValue()
 	if totVal == 0 {
 		// no value in this user unfortuantly, so start again
-		_txGenerator(flagArgs, allNodes, users, set, userSets)
+		_txGenerator(flagArgs, allNodes, users, userSets)
 		return
 	}
 	valueToSend := uint(rand.Intn(int(totVal)) + 1)
 
 	// get all outputs required to fill that value
-	outputs, ok := userSet.getOutputsToFillValue(valueToSend)
+	outputs, ok := userSets[user.Pub.Bytes].getOutputsToFillValue(valueToSend)
 	notOkErr(ok, "not enough output value, but this should not happen")
 
 	fmt.Println(outputs)
@@ -147,11 +141,11 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	// create transaction
 	totalInputValue := uint(0)
 	t := new(Transaction)
-	inputs := make([]*InTx, len(*outputs))
-	for i, o := range *outputs {
+	inputs := make([]*InTx, len(outputs))
+	for i, o := range outputs {
 		// create sig of txID || n || pubkey
-		outTx := userSet.getAndRemove(o.txID, o.n)
-		// todo remove from overall set aswell
+		outTx := userSets[user.Pub.Bytes].getAndRemove(o.txID, o.n)
+
 		totalInputValue += outTx.Value
 
 		newInTx := new(InTx)
@@ -193,8 +187,10 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	msg := Msg{"transaction", t, user.Pub}
 	go dialAndSend(node.IP, msg)
 
-	// manually add the output to userTo
-	(*userSets)[userTo.Bytes].add(t.Hash, txOutputs[0])
+	// add output to sets
+	for _, out := range t.Outputs {
+		userSets[out.PubKey.Bytes].add(t.Hash, out)
+	}
 
 	log.Println("Sent tx")
 }
