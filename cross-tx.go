@@ -342,7 +342,11 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 	return processedTxes
 }
 
-func proccessCrossTxResponse(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTXOSet, addedUTXOSet *UTXOSet, tmpCrossTxPool *CrossTxPool) (*Transaction, bool) {
+func proccessCrossTxResponse(nodeCtx *NodeCtx,
+	t *Transaction,
+	spentUTXOSet *UTXOSet,
+	addedUTXOSet *UTXOSet,
+	tmpCrossTxPool *CrossTxPool) (*Transaction, bool) {
 	// validate inputs with proof of consensus TODO
 
 	// add output to temp
@@ -350,10 +354,13 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTX
 		errFatal(nil, "length of crossTxResponse inputs was not equal to len of outputs")
 	}
 
+	// add outputs to addedUTXOSet
 	for i := range t.Outputs {
 		addedUTXOSet.add(t.Hash, t.Outputs[i])
-		tmpCrossTxPool.addResponses(t) // this shouild be moved?
 	}
+
+	// add all inputs to crossTxPool map such that we can check if all inputs are satisifed in originalTx
+	tmpCrossTxPool.addResponses(t) // this should be moved?
 
 	// we can concur with CrossTxPool for all inputs that have outputs
 	// we can concur with addedUTXO for any inputs that have outputs added in this iteration
@@ -559,11 +566,28 @@ func processNormalTransaction(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UT
 	}
 	// now we know that all UTXOs are spendable
 
-	// spend all outputs
+	// spend all inputs
 	for _, inp := range t.Inputs {
+		// spend from either normal utxoSet or addedUTXOSet
 		outTx := nodeCtx.utxoSet.get(inp.TxHash, inp.N)
-		spentUTXOSet.add(inp.TxHash, outTx)
+		if outTx != nil {
+			spentUTXOSet.add(inp.TxHash, outTx)
+		} else {
+			// the input was not in normal utxoSet, therefor it is in addedUTXOSet
+			outTx = addedUTXOSet.getAndRemove(inp.TxHash, inp.N)
+			if outTx != nil {
+				spentUTXOSet.add(inp.TxHash, outTx)
+			} else {
+				errFatal(nil, "OutTx was not present in neither normal utxoset or addedUTXOSet")
+			}
+		}
 	}
+
+	// add outputs to addedUTXOSet
+	for _, out := range t.Outputs {
+		addedUTXOSet.add(t.Hash, out)
+	}
+
 	return true
 }
 
@@ -625,7 +649,7 @@ func validateNormalTransaction(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *U
 func gossipCrossTxes(nodeCtx *NodeCtx, transactions []*Transaction) {
 	for _, t := range transactions {
 		what := t.whatAmI(nodeCtx)
-		log.Println(what)
+		// log.Println(what)
 		if what == "crosstx" {
 			msg := Msg{"transaction", t, nodeCtx.self.Priv.Pub}
 			closest := txFindClosestCommittee(nodeCtx, t.Inputs[0].TxHash)
