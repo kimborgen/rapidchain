@@ -255,6 +255,18 @@ func (ctp *CrossTxPool) getOriginal(origTxID [32]byte) *Transaction {
 	return nil
 }
 
+func (ctp *CrossTxPool) removeOriginal(origTxID [32]byte) {
+	ctp.mux.Lock()
+	defer ctp.mux.Unlock()
+	delete(ctp.original, origTxID)
+}
+
+func (ctp *CrossTxPool) removeMap(origTxID [32]byte) {
+	ctp.mux.Lock()
+	defer ctp.mux.Unlock()
+	delete(ctp.set, origTxID)
+}
+
 // func (ctp *CrossTxPool) getCrossTxResponseIDsIfAllFinished(origTxID [32]byte) [][32]byte {
 // 	ctp.mux.Lock()
 // 	defer ctp.mux.Unlock()
@@ -348,15 +360,18 @@ func (s *UTXOSet) verifyNonces() {
 			}
 		}
 	}
+}
 
+func (s *UTXOSet) _getAndRemove(k [32]byte, N uint) *OutTx {
+	ret := s._get(k, N)
+	s._removeOutput(k, N)
+	return ret
 }
 
 func (s *UTXOSet) getAndRemove(k [32]byte, N uint) *OutTx {
 	s.mux.Lock()
 	defer s.mux.Unlock()
-	ret := s._get(k, N)
-	s._removeOutput(k, N)
-	return ret
+	return s._getAndRemove(k, N)
 }
 
 func (s *UTXOSet) getTxOutputsAsList(k [32]byte) *[]*OutTx {
