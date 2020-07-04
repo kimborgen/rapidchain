@@ -202,6 +202,7 @@ type CrossTxMap struct {
 	Nonce             uint
 }
 
+// Keeps track of all cross-txes for an originaltx. Is not needed anymore, but may be usefull for debug purposes, so should be deleted after a while (with processIncommingCrossTxResponse changes).
 type CrossTxPool struct {
 	set      map[[32]byte]map[[32]byte]CrossTxMap // OrigTxID -> InputTxID (in other committe) -> CrossTxMap
 	original map[[32]byte]*Transaction            // hold the original transaction untill final transaction is complete

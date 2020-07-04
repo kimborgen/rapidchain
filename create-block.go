@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+
+	"github.com/kimborgen/go-merkletree"
 )
 
 /*
@@ -236,6 +238,52 @@ So when leader is creating a block
 6. Profit! (given an incentive scheme :P)
 
 */
+
+// createBlock pops transaction from transaction pool and creates a new block
+func createProposeBlock(nodeCtx *NodeCtx) *ProposedBlock {
+
+	block := new(ProposedBlock)
+
+	// block all blockchain operations while creating new block
+	nodeCtx.blockchain.mux.Lock()
+
+	// set previous block hash
+	block.PreviousGossipHash = nodeCtx.blockchain.LatestBlock
+
+	// block tx pool operations
+
+	// get all transactions
+	// TODO limit the amout of transactions to be included
+	txes := nodeCtx.txPool.getAll()
+
+	txes = processTransactions(nodeCtx, txes)
+
+	block.Transactions = txes
+
+	block.Iteration = nodeCtx.i.getI()
+	block.CommitteeID = nodeCtx.self.CommitteeID
+	block.LeaderPub = nodeCtx.self.Priv.Pub
+
+	// create merkle tree of transactions
+	data := make([][]byte, len(txes))
+	for i := range data {
+		data[i] = txes[i].encode()
+	}
+
+	tree, err := merkletree.New(data)
+	ifErrFatal(err, "Could not create transaction merkle tree")
+	block.MerkleRoot = toByte32(tree.Root())
+
+	// set hash
+	block.setHash()
+
+	// sign hash
+	block.LeaderSig = nodeCtx.self.Priv.sign(block.GossipHash)
+
+	// unlock locked mutexes
+	nodeCtx.blockchain.mux.Unlock()
+	return block
+}
 
 // processTransacitons proccesses a list of transactions from txpool and returns
 // a list of final transactions ready to be included into a block.
