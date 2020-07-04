@@ -3,13 +3,13 @@ package main
 // Default variables to be used if flag is not set
 
 const default_function string = "node"
-const default_vCPUs uint = 1
-const default_instances uint = 10
-const default_n uint = 20
+const default_vCPUs uint = 2
+const default_instances uint = 4
+const default_n uint = 8
 const default_m uint = 2 // number of comimttees
 const default_totalF uint = 3
 const default_committeeF uint = 2
-const default_d uint = 4
+const default_d uint = 2
 const default_nUsers uint = default_n * 5
 const default_totalCoins uint = default_nUsers * 10
 const default_tps uint = default_m

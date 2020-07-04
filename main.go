@@ -58,6 +58,7 @@ func main() {
 	gob.Register(randomKey.Pub.Pub.Curve)
 	gob.Register(ConsensusMsg{})
 	gob.Register(Transaction{})
+	gob.Register(FinalBlock{})
 
 	// ensure some invariants
 	if default_kappa > 256 {
