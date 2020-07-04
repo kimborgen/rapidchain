@@ -171,7 +171,7 @@ func handleConsensusAccept(
 
 		// create new final block
 		finalBlock := new(FinalBlock)
-		finalBlock.ProposedBlock = *block
+		finalBlock.ProposedBlock = block
 		finalBlock.Signatures = *consensusMsgs
 
 		// add to blockchain
@@ -194,6 +194,12 @@ func handleConsensusAccept(
 				msg := Msg{"transaction", t, nodeCtx.self.Priv.Pub}
 				go routeTx(nodeCtx, msg, txFindClosestCommittee(nodeCtx, t.OrigTxHash))
 			}
+		// call coordinator and send transaction list, but only if you are leader
+		if nodeCtx.amILeader() {
+			fmt.Println("Final block: ", finalBlock.ProposedBlock)
+			fmt.Printf("\n\nsent final block to coordinator\n\n")
+			msg := Msg{"finalblock", finalBlock, nodeCtx.self.Priv.Pub}
+			go dialAndSend(coord+":8080", msg)
 		}
 
 		// increase iteration

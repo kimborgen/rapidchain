@@ -57,7 +57,9 @@ func launchCoordinator(flagArgs *FlagArgs) {
 
 	rand.Seed(1337)
 
-	go coordinator(chanToCoordinator, chanToNodes, &wg, flagArgs)
+	finalBlockChan := make(chan FinalBlock, flagArgs.m*2)
+
+	go coordinator(chanToCoordinator, chanToNodes, &wg, flagArgs, finalBlockChan)
 
 	listener, err := net.Listen("tcp", ":8080")
 	ifErrFatal(err, "tcp listen on port 8080")
@@ -91,12 +93,11 @@ func launchCoordinator(flagArgs *FlagArgs) {
 
 	// start listening for debug/stats
 	for {
-
 		// accept new connection
 		conn, err := listener.Accept()
 		ifErrFatal(err, "tcp accept")
 		// spawn off goroutine to able to accept new connections
-		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults)
+		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults, finalBlockChan)
 	}
 }
 
@@ -134,7 +135,8 @@ func coordinator(
 	chanToCoordinator chan InitialMessageToCoordinator,
 	chanToNodes []chan ResponseToNodes,
 	wg *sync.WaitGroup,
-	flagArgs *FlagArgs) {
+	flagArgs *FlagArgs,
+	finalBlockChan chan FinalBlock) {
 
 	// wait untill all node connections have pushed an ID/IP to chan
 	wg.Wait()
@@ -257,26 +259,31 @@ func coordinator(
 		c <- msg
 	}
 
-	go txGenerator(flagArgs, nodeInfos, users, genesisBlocks)
+	txGenerator(flagArgs, nodeInfos, users, genesisBlocks, finalBlockChan)
 }
 
 func coordinatorDebugStatsHandleConnection(conn net.Conn,
 	successfullGossips *map[[32]byte]int,
-	consensusResults *consensusResult) {
+	consensusResults *consensusResult,
+	finalBlockChan chan FinalBlock) {
 	msg := new(Msg)
 	reciveMsg(conn, msg)
 	switch msg.Typ {
 	case "IDASuccess":
-		idaMsg, ok := msg.Msg.([32]byte)
+		_, ok := msg.Msg.([32]byte)
 		if !ok {
 			errFatal(ok, "IDASuccess decoding")
 		}
-		coordinatorHandleIDASuccess(idaMsg, successfullGossips)
+		//coordinatorHandleIDASuccess(idaMsg, successfullGossips)
 
 	case "consensus":
-		cMsg, ok := msg.Msg.(string)
+		_, ok := msg.Msg.(string)
 		notOkErr(ok, "coordinator consensus cMsg decoding")
-		coordinatorHandleConsensus(cMsg, consensusResults)
+		//coordinatorHandleConsensus(cMsg, consensusResults)
+	case "finalblock":
+		block, ok := msg.Msg.(FinalBlock)
+		notOkErr(ok, "finalblock")
+		finalBlockChan <- block
 	default:
 		errFatal(nil, "no known message type (coordinator)")
 	}

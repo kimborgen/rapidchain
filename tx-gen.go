@@ -18,7 +18,7 @@ func genUsers(flagArgs *FlagArgs) *[]PrivKey {
 	return &users
 }
 
-func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *[]PrivKey) []FinalBlock {
+func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *[]PrivKey) []*FinalBlock {
 
 	per := uint(float64(flagArgs.totalCoins) / float64(flagArgs.nUsers))
 
@@ -28,12 +28,12 @@ func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *
 		ctx.committeeList[i] = c.id
 	}
 
-	finalBlocks := make([]FinalBlock, len(committeeInfos))
+	finalBlocks := make([]*FinalBlock, len(committeeInfos))
 
 	// genesis block, one per committtee
 	for i := range committeeInfos {
 
-		genesisTx := Transaction{}
+		genesisTx := new(Transaction)
 		genesisTx.Outputs = make([]*OutTx, len(*users))
 		for j, u := range *users {
 			tx := new(OutTx)
@@ -48,27 +48,32 @@ func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *
 		for {
 			tmpp := make([]byte, 32)
 			rand.Read(tmpp)
-			tmp := toByte32(tmpp)
+			tmp := hash(tmpp)
 
 			if committeeInfos[i].id == txFindClosestCommittee(ctx, tmp) {
+				fmt.Println("Closets committee ", bytes32ToString(txFindClosestCommittee(ctx, tmp)), bytes32ToString(committeeInfos[i].id))
 				txHash = tmp
 				break
 			}
 		}
 		genesisTx.Hash = txHash
+
+		fmt.Println(genesisTx)
+
 		// genesisTx.setHash()
 		genesisBlock := new(ProposedBlock)
 		// since there is only one transaction set merkle root to hash of gensisTx
 		genesisBlock.MerkleRoot = genesisTx.Hash
-		genesisBlock.Transactions = []*Transaction{&genesisTx}
+		genesisBlock.Transactions = []*Transaction{genesisTx}
 		genesisBlock.CommitteeID = committeeInfos[i].id
 		// since the only thing in this block is the genesis tx, use that hash
 		// genesisBlock.GossipHash = genesisTx.Hash
 		genesisBlock.GossipHash = txHash
 		genesisFinalBlock := new(FinalBlock)
-		genesisFinalBlock.ProposedBlock = *genesisBlock
-		finalBlocks[i] = *genesisFinalBlock
+		genesisFinalBlock.ProposedBlock = genesisBlock
+		finalBlocks[i] = genesisFinalBlock
 
+		fmt.Println(i, genesisFinalBlock)
 	}
 	//fmt.Println("Block: ", genesisBlock)
 	// fmt.Println(finalBlocks)

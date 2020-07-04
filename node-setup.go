@@ -194,7 +194,7 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 	nodeCtx.crossTxPool = CrossTxPool{}
 	nodeCtx.crossTxPool.init()
 
-	nodeCtx.utxoSet = UTXOSet{}
+	nodeCtx.utxoSet = new(UTXOSet)
 	nodeCtx.utxoSet.init()
 
 	nodeCtx.blockchain = Blockchain{}
@@ -212,7 +212,7 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 		// fmt.Print("this committee ", b.ProposedBlock.CommitteeID == nodeCtx.self.CommitteeID, "\n")
 		if b.ProposedBlock.CommitteeID == nodeCtx.self.CommitteeID {
 			b.processBlock(nodeCtx)
-			nodeCtx.blockchain._add(&b)
+			nodeCtx.blockchain._add(b)
 			break
 		}
 	}
