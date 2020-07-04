@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"time"
 )
@@ -80,7 +79,7 @@ func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *
 	return finalBlocks
 }
 
-func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlocks []FinalBlock) {
+func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlocks []*FinalBlock, finalBlockChan chan FinalBlock) {
 	// Emulates users by continously generating transactions
 
 	if flagArgs.tps == 0 {
@@ -102,17 +101,76 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 		}
 	}
 
+	// find committee id list and  add it to nodeCtx
+	cMap := make(map[[32]byte]bool)
+	for _, node := range allNodes {
+		cMap[node.CommitteeID] = true
+	}
+	cList := make([][32]byte, len(cMap))
+	ii := 0
+	for k := range cMap {
+		cList[ii] = k
+		ii++
+	}
+	nodeCtx := new(NodeCtx)
+	nodeCtx.committeeList = cList
+
 	i := 0
 	time.Sleep(3 * time.Second)
 	rand.Seed(42)
 	for {
-		go _txGenerator(flagArgs, &allNodes, users, userSets)
-		dur := time.Second / time.Duration(flagArgs.tps)
+		l := len(finalBlockChan)
+		for i := 0; i < l; i++ {
+			fmt.Println("Recived finalblock")
+			finalBlock := <-finalBlockChan
+			fmt.Println(finalBlock.ProposedBlock)
+
+			for _, t := range finalBlock.ProposedBlock.Transactions {
+				if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs == nil {
+					fmt.Println("crosstx")
+					// return "crosstx"
+					continue
+				} else if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs != nil {
+					// return "originaltx"
+					fmt.Println("originaltx")
+					continue
+				} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && txFindClosestCommittee(nodeCtx, t.OrigTxHash) != finalBlock.ProposedBlock.CommitteeID {
+					// return "crosstxresponse"
+					fmt.Println("crosstxresponse_C_in")
+					continue
+				} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && t.ProofOfConsensus != nil {
+					// TODO ADD crosstxresponse_C_out or not
+					fmt.Println("crosstxresponse_C_out")
+					continue
+				}
+
+				fmt.Print("normal or final")
+				fmt.Println(t)
+
+				for _, out := range t.Outputs {
+					userSets[out.PubKey.Bytes].add(t.ifOrigRetOrigIfNotRetHash(), out)
+				}
+			}
+		}
+
+		_txGenerator(flagArgs, &allNodes, users, userSets)
+
 		// fmt.Println("Sleeping for ", dur)
-		time.Sleep(dur)
+		time.Sleep(time.Second / time.Duration(flagArgs.tps))
 		i++
 		// if i == 30 {
 		// 	return
+		// }
+		// if i%10 == 0 {
+		// 	tot := 0
+		// 	for _, u := range userSets {
+		// 		for _, t := range u.set {
+		// 			for range t {
+		// 				tot++
+		// 			}
+		// 		}
+		// 	}
+		// 	fmt.Println(tot)
 		// }
 	}
 }
@@ -137,7 +195,7 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	outputs, ok := userSets[user.Pub.Bytes].getOutputsToFillValue(valueToSend)
 	notOkErr(ok, "not enough output value, but this should not happen")
 
-	fmt.Println(outputs)
+	// fmt.Println(outputs)
 
 	// pick random user to send transaction to, aka output of tx
 	rndTo := rand.Intn(len(*users))
@@ -148,15 +206,14 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	t := new(Transaction)
 	inputs := make([]*InTx, len(outputs))
 	for i, o := range outputs {
-		// create sig of txID || n || pubkey
-		outTx := userSets[user.Pub.Bytes].getAndRemove(o.txID, o.n)
+		outTx := userSets[user.Pub.Bytes]._getAndRemove(o.txID, o.n)
 
 		totalInputValue += outTx.Value
 
 		newInTx := new(InTx)
 		newInTx.TxHash = o.txID
 		newInTx.OrigTxHash = [32]byte{}
-		newInTx.N = o.n
+		newInTx.N = outTx.N
 		inputs[i] = newInTx
 	}
 
@@ -184,6 +241,12 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	t.setHash()
 	t.signInputs(&user)
 
+	// fmt.Println("newTx", bytes32ToString(t.Hash), bytes32ToString(t.OrigTxHash), bytes32ToString(t.id()))
+	// fmt.Println(bytes32ToString(t.Inputs[0].TxHash), bytes32ToString(t.Inputs[0].OrigTxHash), bytes32ToString(t.id()), t.Inputs[0].N, t.Inputs[0].Sig)
+	// fmt.Println(bytes32ToString(t.Outputs[0].PubKey.Bytes), t.Outputs[0].Value, t.Outputs[0].N)
+
+	fmt.Println("Sent tx: ", t)
+
 	// pick random node to send tx to
 	rndNode := rand.Intn(len(*allNodes))
 	node := (*allNodes)[rndNode]
@@ -193,9 +256,9 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	go dialAndSend(node.IP, msg)
 
 	// add output to sets
-	for _, out := range t.Outputs {
-		userSets[out.PubKey.Bytes].add(t.Hash, out)
-	}
+	// for _, out := range t.Outputs {
+	// 	userSets[out.PubKey.Bytes].add(t.Hash, out)
+	// }
 
-	log.Println("Sent tx")
+	// log.Println("Sent tx")
 }
