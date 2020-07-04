@@ -154,12 +154,12 @@ Response to C_1 from C_3
 		Inputs
 			0
 				TxId 			ef2		// C_3
-				OrigInputTxId	nil		// C_3
+				OrigInputTxId	nil		//
 				N				2
 				Sig				Of ef2 and a2c
 		Outputs // Problem, hash of tx is not TxID, therefor wee need an identifier to see if it is a cross-tx
-			0
-				Value	25
+			0	// This output is added to UTXOSet with the corresponding Input.TxID
+				Value	25 /
 				N		0
 				PubKey  Owner
 		Proof-Of-Consensus
@@ -201,6 +201,31 @@ Final transaction
 			N 		1
 			PubKey  user_1 // rest back to self
 
+
+Final transaction improved
+	TxID 		qxk		// unsigned
+	OrigTxId	a2c
+	Inputs
+		0	// value 25
+			TxId 			ef2
+			OrigInputTxId	nil
+			N				0
+			Sig				Sig of ef2 and a2c
+		1	// value 20
+			TxId			zb4
+			OrigInputTxId	nil
+			N 				0
+			Sig				Sig of zb4 and a2c
+	Outputs
+		0
+			Value 	30
+			N		0
+			PubKey	user_2
+		1
+			Value 15
+			N 		1
+			PubKey  user_1 // rest back to self
+
 Added to blockchain and done! abc and skr are validated because they are in the blockchain and its proofOfCosnensus
 is validated. And all is good!
 
@@ -225,6 +250,26 @@ user_1 using final transaction
 			Value 	5
 			N 		1
 			PubKey  user_1 // rest back to self
+
+user_1 using final transaction Better version?
+	Hash 		nro
+	OrigTxHash	nil
+	Inputs
+		0	// value 15
+			TxHash 			a2c		// final-cross-tx
+			OrigTxHash		nil		// input to orig
+			N				1
+			Sig				Sig of a2c and nro
+	Outputs
+		0
+			Value 	10
+			N		0
+			PubKey	user_2
+		1
+			Value 	5
+			N 		1
+			PubKey  user_1 // rest back to self
+
 Note: change OrigInpTxID to OrigTxHash
 
 
@@ -282,11 +327,14 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 
 	// sort txes to their corresponding assigments
 	for _, t := range txes {
+		fmt.Println(t)
 		if t.OrigTxHash == [32]byte{} && t.Hash != [32]byte{} {
 			// this is a normal transaction
 			normal := true
 			for _, inp := range t.Inputs {
 				closestCommittee := txFindClosestCommittee(nodeCtx, inp.TxHash)
+				fmt.Println(bytes32ToString(closestCommittee), bytes32ToString(nodeCtx.self.CommitteeID))
+				fmt.Println(inp)
 				if closestCommittee != nodeCtx.self.CommitteeID {
 					// the input belongs to another committee
 					normal = false
@@ -306,9 +354,17 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 				//toCrossTxes[t.Hash] = t
 				log.Println("Normal transaction, some inputs not in this committee")
 				newCrossTxes := processTransactionWithUnknowInputs(nodeCtx, t, spentUTXOSet, addedUTXOSet)
-				log.Println("Len of new cross-txes ", len(newCrossTxes))
+				if len(newCrossTxes) == 0 {
+					errFatal(nil, "len of new cross-txes was 0")
+				}
 				if newCrossTxes != nil {
+					if t.OrigTxHash == [32]byte{} || t.Hash != [32]byte{} {
+						errFatal(nil, "originaltx hashes was not changed")
+					}
 					processedTxes = append(processedTxes, t)
+
+					// add original to tmpCrossTxPool
+					tmpCrossTxPool.addOriginalTx(nodeCtx, t)
 					processedTxes = append(processedTxes, newCrossTxes...)
 				}
 			}
@@ -349,14 +405,32 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	tmpCrossTxPool *CrossTxPool) (*Transaction, bool) {
 	// validate inputs with proof of consensus TODO
 
+	if t.ProofOfConsensus == nil {
+		errFatal(nil, "Proof of consensus was nil")
+	}
+
 	// add output to temp
 	if len(t.Inputs) != len(t.Outputs) {
 		errFatal(nil, "length of crossTxResponse inputs was not equal to len of outputs")
 	}
 
+	// get original tx, throw error if the original tx is not found
+	original := nodeCtx.crossTxPool.getOriginal(t.OrigTxHash)
+	if original == nil {
+		original = tmpCrossTxPool.getOriginal(t.OrigTxHash)
+		if original == nil {
+			fmt.Println(t)
+			errFatal(nil, "no original tx")
+		}
+	}
+
+	if original.OrigTxHash != t.OrigTxHash {
+		errFatal(nil, "orighash not equal")
+	}
+
 	// add outputs to addedUTXOSet
 	for i := range t.Outputs {
-		addedUTXOSet.add(t.Hash, t.Outputs[i])
+		addedUTXOSet.add(t.Inputs[i].TxHash, t.Outputs[i])
 	}
 
 	// add all inputs to crossTxPool map such that we can check if all inputs are satisifed in originalTx
@@ -367,7 +441,6 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	// this should be enoguh to check if all inputs are covered in this transaction.
 
 	// crossTxs := nodeCtx.crossTxPool.getMap(t.OrigTxHash)
-	original := nodeCtx.crossTxPool.getOriginal(t.OrigTxHash)
 
 	allInputsCovered := true
 	for _, inp := range original.Inputs {
@@ -384,63 +457,107 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 
 	newTx := new(Transaction)
 
-	newTx.OrigTxHash = original.Hash
+	newTx.OrigTxHash = original.OrigTxHash
 	newTx.Outputs = original.Outputs
 
 	newInputs := []*InTx{}
 	for _, inp := range original.Inputs {
 		c := nodeCtx.crossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash)
-		if c != nil {
-			outtx := nodeCtx.utxoSet.get(c.CrossTxResponseID, c.Nonce)
-			if outtx == nil {
-				errFatal(nil, "outtx did not exists hmm")
-			}
-			newInp := new(InTx)
-			newInp.TxHash = c.CrossTxResponseID
-			newInp.OrigTxHash = original.Hash
-			newInp.N = c.Nonce
-			newInp.Sig = inp.Sig
-
-			newInputs = append(newInputs, newInp)
-
-			// spend output
-			spentUTXOSet.add(c.CrossTxResponseID, outtx)
-			continue
-		}
-		c = tmpCrossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash)
 		if c == nil {
-			errFatal(nil, "should not happen")
+			c = tmpCrossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash)
+			if c == nil {
+				errFatal(nil, "should not happen")
+			}
+		}
+		outTx := nodeCtx.utxoSet.get(inp.TxHash, inp.N)
+		if outTx == nil {
+			outTx = addedUTXOSet.get(inp.TxHash, inp.N)
+			if outTx == nil {
+				fmt.Println(original)
+				fmt.Println(inp)
+				fmt.Println(outTx)
+
+				fmt.Println(bytes32ToString(txFindClosestCommittee(nodeCtx, inp.TxHash)))
+				fmt.Println(bytes32ToString(nodeCtx.self.CommitteeID))
+
+				if spenttx := spentUTXOSet.get(inp.TxHash, inp.N); spenttx != nil {
+					log.Println("original UTXO was allready spent :o ")
+					log.Println(spenttx)
+					errFatal(nil, "spent")
+				}
+
+				errFatal(nil, "outTx did not exists hmmmm")
+			}
 		}
 
-		outtx := addedUTXOSet.get(c.CrossTxResponseID, c.Nonce)
-		if outtx == nil {
-			errFatal(nil, "outtx did not exists hmm")
+		// fmt.Println(outTx)
+		// if outTx.N != c.Nonce {
+		// 	errFatal(nil, "nonces not equal")
+		// }
+
+		if spentUTXOSet.get(inp.TxHash, inp.N) != nil {
+			fmt.Println(inp)
+			fmt.Println(outTx)
+			fmt.Println(bytes32ToString(c.CrossTxResponseID))
+			fmt.Println(c.Nonce)
+
+			fmt.Println("UTXOSet ", nodeCtx.utxoSet)
+			fmt.Println("addedUTXOSet ", addedUTXOSet)
+			fmt.Println("spentUTXOSet ", spentUTXOSet)
+			fmt.Println("original: ", original)
+
+			fmt.Println(bytes32ToString(txFindClosestCommittee(nodeCtx, inp.TxHash)))
+			fmt.Println(bytes32ToString(nodeCtx.self.CommitteeID))
+
+			log.Println("UTXO allready spent")
+			errFatal(nil, "spent")
 		}
 
 		newInp := new(InTx)
-		newInp.TxHash = c.CrossTxResponseID
-		newInp.OrigTxHash = original.Hash
-		newInp.N = c.Nonce
+		newInp.TxHash = inp.TxHash
+		// newInp.OrigTxHash = inp.OrigTxHash
+		newInp.N = inp.N
 		newInp.Sig = inp.Sig
+
 		newInputs = append(newInputs, newInp)
 
-		// spend output by removing it from addedUTXO
-		addedUTXOSet.removeOutput(c.CrossTxResponseID, c.Nonce)
+		// spend output
+		spentUTXOSet.add(inp.TxHash, outTx)
 	}
 
 	newTx.Inputs = newInputs
+	newTx.setHash()
+
+	// finaly add the original outputs, on the original id
+	for _, out := range original.Outputs {
+		addedUTXOSet.add(original.OrigTxHash, out)
+	}
+
+	// remove from crossTxPool
+	tmpCrossTxPool.removeMap(original.OrigTxHash)
+	tmpCrossTxPool.removeOriginal(original.OrigTxHash)
 	return newTx, true
 }
 
 func processIncommingCrossTx(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTXOSet, addedUTXOSet *UTXOSet) bool {
 	// validate inputs.
+
+	if t.Outputs != nil {
+		fmt.Print(t)
+		errFatal(nil, "outputs was not nil in incomming cross-tx")
+	}
+
+	// fmt.Println(bytes32ToString(nodeCtx.self.CommitteeID), bytes32ToString(txFindClosestCommittee(nodeCtx, t.Inputs[0].TxHash)))
+	if nodeCtx.self.CommitteeID != txFindClosestCommittee(nodeCtx, t.Inputs[0].TxHash) {
+		fmt.Println(bytes32ToString(nodeCtx.self.CommitteeID), bytes32ToString(txFindClosestCommittee(nodeCtx, t.Inputs[0].TxHash)))
+		errFatal(nil, "incomming cross tx not beloning in thsi committee")
+	}
+
 	for _, inp := range t.Inputs {
 		if !validateInput(nodeCtx, inp, t.OrigTxHash, spentUTXOSet, addedUTXOSet) {
 			log.Println("Incoming cross-tx input not valid")
 			fmt.Println(t)
-			fmt.Println(bytes32ToString(t.Hash))
-			fmt.Println(bytes32ToString(t.OrigTxHash))
-			fmt.Println(bytes32ToString(t.id()))
+			errFatal(nil, "cross-tx")
 			return false
 		}
 	}
@@ -464,10 +581,11 @@ func processIncommingCrossTx(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTX
 	// set a new hash
 	t.setHash()
 
+	// DO NOT add newOuts to addedUTXOSet since these outputs belong in another committtee
 	// add newOuts to addedUTXOSet
-	for _, out := range newOuts {
-		addedUTXOSet.add(t.Hash, out)
-	}
+	// for _, out := range newOuts {
+	// 	addedUTXOSet.add(t.Hash, out)
+	// }
 
 	return true
 }
@@ -478,6 +596,7 @@ func processTransactionWithUnknowInputs(nodeCtx *NodeCtx, t *Transaction, spentU
 
 	newTxs := []*Transaction{}
 	newInputs := make(map[[32]byte][]*InTx) // committeeID -> Input
+	testtmp := 0
 	for _, inp := range t.Inputs {
 		closestCommittee := txFindClosestCommittee(nodeCtx, inp.TxHash)
 		if closestCommittee != nodeCtx.self.CommitteeID {
@@ -487,10 +606,13 @@ func processTransactionWithUnknowInputs(nodeCtx *NodeCtx, t *Transaction, spentU
 			} else {
 				newInputs[closestCommittee] = append(newInputs[closestCommittee], inp)
 			}
+
 		} else {
+			testtmp++
 			// in this committe, validate
 			if !validateInput(nodeCtx, inp, t.id(), spentUTXOSet, addedUTXOSet) {
 				log.Println("input not valid")
+				errFatal(nil, "input not valid")
 				return nil
 			}
 			// do not spend inputs
@@ -509,10 +631,15 @@ func processTransactionWithUnknowInputs(nodeCtx *NodeCtx, t *Transaction, spentU
 	t.OrigTxHash = t.Hash
 	t.Hash = [32]byte{}
 
+	// if len(t.Inputs) > 1 && testtmp == 0 {
+	// 	fmt.Println(t)
+	// 	errFatal(nil, "test")
+	// }
+
 	return newTxs
 }
 
-// processes input. throws error if UTXOset does not have outtx. Returns amount spent
+// processes input. throws error if UTXOset does not have outTx. Returns amount spent
 func spendInput(nodeCtx *NodeCtx, iTx *InTx, spentUTXOSet *UTXOSet) uint {
 	outTx := nodeCtx.utxoSet.get(iTx.TxHash, iTx.N)
 	if outTx == nil {
@@ -522,7 +649,7 @@ func spendInput(nodeCtx *NodeCtx, iTx *InTx, spentUTXOSet *UTXOSet) uint {
 	return outTx.Value
 }
 
-// processes input and creates a corresponding output. throws error if UTXOset does not have outtx.
+// processes input and creates a corresponding output. throws error if UTXOset does not have outTx.
 func spendInputToNewOutput(nodeCtx *NodeCtx, iTx *InTx, spentUTXOSet *UTXOSet) *OutTx {
 	outTx := nodeCtx.utxoSet.get(iTx.TxHash, iTx.N)
 	if outTx == nil {
@@ -537,6 +664,7 @@ func validateInput(nodeCtx *NodeCtx, iTx *InTx, txID [32]byte, spentUTXOSet *UTX
 	// check if output is not allready spent
 	if spentUTXOSet.get(iTx.TxHash, iTx.N) != nil {
 		log.Println("UTXO allready spent")
+		errFatal(nil, "spent")
 		return false
 	}
 
@@ -546,6 +674,8 @@ func validateInput(nodeCtx *NodeCtx, iTx *InTx, txID [32]byte, spentUTXOSet *UTX
 		outTx = addedUTXOSet.get(iTx.TxHash, iTx.N)
 		if outTx == nil {
 			log.Println("No UTXO on this input")
+			fmt.Println(iTx)
+			errFatal(nil, "utxo")
 			return false
 		}
 	}
@@ -610,11 +740,21 @@ func validateNormalTransaction(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *U
 	var totalUTXOValue uint = 0
 	for _, inp := range t.Inputs {
 		// check wheter or not inputs have a corresponding UTXO
+
+		// check if output is not allready spent
+		if spentUTXOSet.get(inp.TxHash, inp.N) != nil {
+			log.Println("UTXO allready spent")
+			errFatal(nil, "UTXO allready spent")
+			return false
+		}
+
 		outTx := nodeCtx.utxoSet.get(inp.TxHash, inp.N)
 		if outTx == nil {
 			outTx = addedUTXOSet._get(inp.TxHash, inp.N)
 			if outTx == nil {
 				log.Println("No UTXO on this input")
+				fmt.Println(t)
+				errFatal(nil, "No UTXO on this input")
 				return false
 			}
 		}
@@ -629,12 +769,7 @@ func validateNormalTransaction(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *U
 			fmt.Println("OutTx", outTx)
 			fmt.Println("Input", inp)
 			fmt.Println("Spec: ", inp.N, inp.TxHash)
-			return false
-		}
-
-		// check if output is not allready spent
-		if spentUTXOSet.get(inp.TxHash, inp.N) != nil {
-			log.Println("UTXO allready spent")
+			errFatal(nil, "signature")
 			return false
 		}
 
@@ -648,6 +783,7 @@ func validateNormalTransaction(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *U
 
 	if totalOutputValue != totalUTXOValue {
 		log.Printf("Total output value in transaction %d not equal to total UTXO value %d", totalOutputValue, totalUTXOValue)
+		errFatal(nil, "value")
 		return false
 	}
 
@@ -655,13 +791,12 @@ func validateNormalTransaction(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *U
 }
 
 // goes trough the transactions in the block and gossips the transaction to the corresponding committees
-
 func gossipCrossTxes(nodeCtx *NodeCtx, transactions []*Transaction) {
 	for _, t := range transactions {
 		what := t.whatAmI(nodeCtx)
 		// log.Println(what)
 		if what == "crosstx" {
-			msg := Msg{"transaction", t, nodeCtx.self.Priv.Pub}
+			msg := Msg{"crosstransaction", t, nodeCtx.self.Priv.Pub}
 			closest := txFindClosestCommittee(nodeCtx, t.Inputs[0].TxHash)
 			if closest == nodeCtx.self.CommitteeID {
 				errFatal(nil, "closest was own committe crosstx")

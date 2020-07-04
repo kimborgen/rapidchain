@@ -76,7 +76,7 @@ func nodeHandleConnection(
 				tx.decode(txData)
 
 				// add tx to pool
-				nodeCtx.txPool.safeAdd(tx)
+				nodeCtx.txPool.add(tx)
 				//fmt.Println("Added to txpool")
 			case "block":
 				// ProposedBlock
@@ -172,14 +172,34 @@ func nodeHandleConnection(
 			IDAGossip(nodeCtx, tMsg.encode(), "tx")
 
 			// add to tx pool
-			ok := nodeCtx.txPool.safeAdd(&tMsg)
-			if ok {
-				// log.Println("Tx recived to target committee and added to txpool", tMsg.Hash)
-			}
+			//ok := nodeCtx.txPool.safeAdd(&tMsg)
+			//if ok {
+			// log.Println("Tx recived to target committee and added to txpool", tMsg.Hash)
+			//}
 		} else {
 			// log.Println("Tx not target committe, routing", tMsg.Hash)
 			go routeTx(nodeCtx, msg, cID)
 		}
+	case "crosstransaction":
+		// recived a transaction
+		tMsg, ok := msg.Msg.(Transaction)
+		notOkErr(ok, "crosstransaction decoding") //todo dont need such strict err
+
+		// ida gossip the tx so the rest of the committee gets the tx
+		IDAGossip(nodeCtx, tMsg.encode(), "tx")
+
+		// add to tx pool
+		// nodeCtx.txPool.safeAdd(&tMsg)
+	case "crosstransactionresponse":
+		// recived a transaction
+		tMsg, ok := msg.Msg.(Transaction)
+		notOkErr(ok, "crosstransactionresponse decoding") //todo dont need such strict err
+
+		// ida gossip the tx so the rest of the committee gets the tx
+		IDAGossip(nodeCtx, tMsg.encode(), "tx")
+
+		// add to tx pool
+		// nodeCtx.txPool.safeAdd(&tMsg)
 
 	default:
 		log.Fatal("[Error] no known message type")

@@ -24,7 +24,7 @@ func createProposeBlock(nodeCtx *NodeCtx) *ProposedBlock {
 
 	// get all transactions
 	// TODO limit the amout of transactions to be included
-	txes := nodeCtx.txPool.popAll()
+	txes := nodeCtx.txPool.getAll()
 
 	txes = processTransactions(nodeCtx, txes)
 
@@ -120,8 +120,8 @@ func leaderElection(nodeCtx *NodeCtx) {
 
 	// the leader is the lowest in list except if selfHash is lower than that.
 	if byte32Operations(selfHash, "<", listOfHashes[0].toSort) {
-		log.Println("I am leader!")
 		nodeCtx.committee.CurrentLeader = nodeCtx.self.Priv.Pub
+		log.Println("I am leader!", nodeCtx.amILeader())
 	} else {
 		leader := listOfHashes[0].original
 		nodeCtx.committee.CurrentLeader = nodeCtx.committee.Members[leader].Pub

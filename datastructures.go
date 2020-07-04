@@ -40,7 +40,7 @@ type PlaceHolder struct {
 
 type ResponseToNodes struct {
 	Nodes            []NodeAllInfo
-	GensisisBlocks   []FinalBlock
+	GensisisBlocks   []*FinalBlock
 	DebugNode        [32]byte
 	InitalRandomness [32]byte
 }
@@ -109,7 +109,7 @@ func (t *TxPool) init() {
 }
 
 func (t *TxPool) _add(tx *Transaction) {
-	t.pool[tx.Hash] = tx
+	t.pool[tx.id()] = tx
 }
 
 func (t *TxPool) add(tx *Transaction) {
@@ -122,10 +122,11 @@ func (t *TxPool) safeAdd(tx *Transaction) bool {
 	// only add if there is no transaction with same has
 	t.mux.Lock()
 	defer t.mux.Unlock()
-	if _, ok := t.pool[tx.Hash]; ok {
+	if _, ok := t.pool[tx.id()]; ok {
+		errFatal(nil, "tx allready in tx pool")
 		return false
 	}
-	t.pool[tx.Hash] = tx
+	t.pool[tx.id()] = tx
 	return true
 }
 
@@ -135,10 +136,26 @@ func (t *TxPool) get(txHash [32]byte) *Transaction {
 	return t.pool[txHash]
 }
 
+func (t *TxPool) getAll() []*Transaction {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	txes := make([]*Transaction, len(t.pool))
+	i := 0
+	for _, tx := range t.pool {
+		txes[i] = tx
+		i++
+	}
+	return txes
+}
+
+func (t *TxPool) _remove(txHash [32]byte) {
+	delete(t.pool, txHash)
+}
+
 func (t *TxPool) remove(txHash [32]byte) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
-	delete(t.pool, txHash)
+	t._remove(txHash)
 }
 
 func (t *TxPool) pop(txHash [32]byte) (*Transaction, bool) {
@@ -166,6 +183,16 @@ func (t *TxPool) popAll() []*Transaction {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 	return t._popAll()
+}
+
+func (t *TxPool) processBlock(transactions []*Transaction) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	for _, tx := range transactions {
+		// Remove originaltx, incomming-cross-tx
+		t._remove(tx.OrigTxHash)
+		t._remove(tx.Hash)
+	}
 }
 
 type CrossTxMap struct {
@@ -211,16 +238,20 @@ func (ctp *CrossTxPool) add(origTxID [32]byte, inputTxID [32]byte) {
 // adds a transaction to pool
 func (ctp *CrossTxPool) addOriginalTx(nodeCtx *NodeCtx, tx *Transaction) {
 	// assuming transaction.whatAmI == originaltx
-	if _, ok := ctp.set[tx.OrigTxHash]; !ok {
-		ctp.set[tx.OrigTxHash] = make(map[[32]byte]CrossTxMap)
+	ctp.mux.Lock()
+	defer ctp.mux.Unlock()
+	ctp.set[tx.OrigTxHash] = make(map[[32]byte]CrossTxMap)
+	if tx.Hash != [32]byte{} || tx.OrigTxHash == [32]byte{} {
+		errFatal(nil, "origtx wrong hashes")
 	}
 	for _, inp := range tx.Inputs {
-		if txFindClosestCommittee(nodeCtx, inp.TxHash) == nodeCtx.committee.ID {
-			ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: true, CrossTxResponseID: tx.OrigTxHash, Nonce: inp.N}
+		if txFindClosestCommittee(nodeCtx, inp.TxHash) == nodeCtx.self.CommitteeID {
+			ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: true, CrossTxResponseID: inp.TxHash, Nonce: inp.N}
 		} else {
 			ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: false}
 		}
 	}
+	ctp.original[tx.OrigTxHash] = tx
 }
 
 func (ctp *CrossTxPool) addResponses(crossTxResponse *Transaction) {
@@ -230,9 +261,8 @@ func (ctp *CrossTxPool) addResponses(crossTxResponse *Transaction) {
 	if _, ok := ctp.set[origTxID]; !ok {
 		ctp.set[origTxID] = make(map[[32]byte]CrossTxMap)
 	}
-	for i := range crossTxResponse.Inputs {
-		inpId := crossTxResponse.Inputs[i].TxHash
-		ctp.set[origTxID][inpId] = CrossTxMap{InputTxID: inpId, Finished: true, CrossTxResponseID: crossTxResponse.Hash, Nonce: uint(i)}
+	for _, inp := range crossTxResponse.Inputs {
+		ctp.set[origTxID][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: true, CrossTxResponseID: crossTxResponse.Hash, Nonce: inp.N}
 	}
 }
 
@@ -251,7 +281,12 @@ func (ctp *CrossTxPool) getCrossTxMap(origTxID [32]byte, inputTxID [32]byte) *Cr
 	if m, ok := ctp.set[origTxID]; ok {
 		if v, ok2 := m[inputTxID]; ok2 {
 			if v.Finished {
-				return &v
+				mp := new(CrossTxMap)
+				mp.CrossTxResponseID = v.CrossTxResponseID
+				mp.Finished = v.Finished
+				mp.InputTxID = v.InputTxID
+				mp.Nonce = v.Nonce
+				return mp
 			} else {
 				return nil
 			}
@@ -309,6 +344,17 @@ type UTXOSet struct {
 	mux sync.Mutex
 }
 
+func (s *UTXOSet) String() string {
+	var str string = "[UTXOSet] \n"
+	for txID, t := range s.set {
+		str += fmt.Sprintf("\t TxID: %s, Len of set: %d\n", bytes32ToString(txID), len(t))
+		for n, out := range t {
+			str += fmt.Sprintf("\tN: %d, out %s\n", n, out)
+		}
+	}
+	return str
+}
+
 func (s *UTXOSet) init() {
 	s.set = make(map[[32]byte]map[uint]*OutTx)
 }
@@ -341,10 +387,12 @@ func (s *UTXOSet) removeOutput(k [32]byte, N uint) {
 
 func (s *UTXOSet) _get(k [32]byte, N uint) *OutTx {
 	if len(s.set[k]) == 0 {
+		fmt.Println("no key")
 		return nil
 	}
 	v, ok := s.set[k][N]
 	if !ok {
+		fmt.Println("no out")
 		return nil
 	}
 	if N != v.N {
@@ -440,6 +488,9 @@ func (s *UTXOSet) getOutputsToFillValue(value uint) ([]*txIDNonceTuple, bool) {
 			tnp := new(txIDNonceTuple)
 			tnp.txID = txID
 			tnp.n = nonce
+			if nonce != s.set[txID][nonce].N {
+				errFatal(nil, fmt.Sprintf("nonces not equal %d %d", nonce, s.set[txID][nonce].N))
+			}
 			if remV > 0 {
 				// take entire output
 				res = append(res, tnp)
@@ -466,10 +517,18 @@ type InTx struct {
 	Sig        *Sig     // Sig of TxHash, OrigTxHash, N, TxHash, OrigTxHash
 }
 
+func (iTx *InTx) String() string {
+	return fmt.Sprintf("[InTx] TxHash: %s, OrigTxHash: %s,\n\t\t N: %d, Sig: %s", bytes32ToString(iTx.TxHash), bytes32ToString(iTx.OrigTxHash), iTx.N, bytesToString(iTx.Sig.bytes()))
+}
+
 type OutTx struct {
 	Value  uint // value of UTXO
 	N      uint // nonce/i in output list of tx
 	PubKey *PubKey
+}
+
+func (o *OutTx) String() string {
+	return fmt.Sprintf("[OutTx] Value: %d, N: %d, PubKey: %s", o.Value, o.N, bytes32ToString(o.PubKey.Bytes))
 }
 
 func (o *OutTx) bytes() []byte {
@@ -499,15 +558,13 @@ func (iTx *InTx) sign(extra [32]byte, priv *PrivKey) {
 }
 
 func (iTx *InTx) id() [32]byte {
-	hashToTest := [32]byte{}
-	if iTx.OrigTxHash != [32]byte{} {
-		// inp.OrigTxHash is where the tx is located
-		hashToTest = iTx.OrigTxHash
+	id := [32]byte{}
+	if iTx.TxHash != [32]byte{} {
+		id = iTx.TxHash
 	} else {
-		// inp.TxHash is where the tx is located
-		hashToTest = iTx.TxHash
+		id = iTx.OrigTxHash
 	}
-	return hashToTest
+	return id
 }
 
 type ProofOfConsensus struct {
@@ -518,12 +575,31 @@ type ProofOfConsensus struct {
 	Signatures       []*ConsensusMsg
 }
 
+func (poc *ProofOfConsensus) String() string {
+	str := fmt.Sprintf("[PoC] GossipHash: %s, IntermediateHash: %s\n\tMerkleRoot: %s, MerkleProof: %s,\n\tLen of signatures: %d", bytes32ToString(poc.GossipHash), bytes32ToString(poc.IntermediateHash), bytes32ToString(poc.MerkleRoot), " merkleproofplaceholder ", len(poc.Signatures))
+	return str
+}
+
 type Transaction struct {
 	Hash             [32]byte // hash of inputs and outputs
 	OrigTxHash       [32]byte // see cross-tx
 	Inputs           []*InTx
 	Outputs          []*OutTx
-	proofOfConsensus *ProofOfConsensus
+	ProofOfConsensus *ProofOfConsensus
+}
+
+func (t *Transaction) String() string {
+	start := fmt.Sprintf("[TX] Hash: %s, OrigTxHash: %s\n", bytes32ToString(t.Hash), bytes32ToString(t.OrigTxHash))
+	for _, inp := range t.Inputs {
+		start += fmt.Sprintln("\n\t", inp)
+	}
+	for _, out := range t.Outputs {
+		start += fmt.Sprintln("\n\t", out)
+	}
+	if t.ProofOfConsensus != nil {
+		start += fmt.Sprintf("\n\t%s\n", t.ProofOfConsensus)
+	}
+	return start
 }
 
 func (t *Transaction) whatAmI(nodeCtx *NodeCtx) string {
@@ -534,7 +610,9 @@ func (t *Transaction) whatAmI(nodeCtx *NodeCtx) string {
 	} else if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs != nil {
 		return "originaltx"
 	} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && txFindClosestCommittee(nodeCtx, t.OrigTxHash) != nodeCtx.self.CommitteeID {
-		return "crosstxresponse"
+		return "crosstxresponse_C_in"
+	} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && t.ProofOfConsensus != nil {
+		return "crosstxresponse_C_out"
 	} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && txFindClosestCommittee(nodeCtx, t.OrigTxHash) == nodeCtx.self.CommitteeID {
 		return "finaltransaction"
 	} else {
@@ -563,7 +641,16 @@ func (t *Transaction) id() [32]byte {
 	} else {
 		id = t.OrigTxHash
 	}
+	return id
+}
 
+func (t *Transaction) ifOrigRetOrigIfNotRetHash() [32]byte {
+	id := [32]byte{}
+	if t.OrigTxHash != [32]byte{} {
+		id = t.OrigTxHash
+	} else {
+		id = t.Hash
+	}
 	return id
 }
 
@@ -608,6 +695,15 @@ type ProposedBlock struct {
 	MerkleRoot         [32]byte       // Merkle tree of transactions
 	LeaderSig          *Sig           // sig of gossiphash
 	Transactions       []*Transaction // not hashed because it is implicitly in MerkleRoot
+}
+
+func (b *ProposedBlock) String() string {
+	str := fmt.Sprintf("\n[ProposedBlock] GossipHash: %s, PreviousGossipHash: %s, Iteration %d, ", bytes32ToString(b.GossipHash), bytes32ToString(b.PreviousGossipHash), b.Iteration)
+	str += fmt.Sprintf("\n\tCommitteeID: %s, LeaderPub: %s, \n\tmerkleroot: %s, LeaderSig: %s\n", bytes32ToString(b.CommitteeID), bytes32ToString(b.LeaderPub.Bytes), bytes32ToString(b.MerkleRoot), bytesToString(b.LeaderSig.bytes()))
+	for _, t := range b.Transactions {
+		str += fmt.Sprintf("\t%s\n", t)
+	}
+	return str
 }
 
 func (b *ProposedBlock) calculateHash() [32]byte {
@@ -667,19 +763,21 @@ func (b *ProposedBlock) decode(bArr []byte) {
 // The final block recorded by each member.
 // Because of synchronity, the signature set is equal among all nodes
 type FinalBlock struct {
-	ProposedBlock ProposedBlock
+	ProposedBlock *ProposedBlock
 	Signatures    []*ConsensusMsg
 }
 
-// processes the final block by changing the UTXO set
+// processes the final block by changing the UTXO set and remove transaction from tx pool
 func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 	// assume that signatures and so on are valid because the block has gone trough consensus
 	// lock utxoSet because we are going to do a lot of changes that must be atomic with the respect to the block
 	nodeCtx.utxoSet.mux.Lock()
-
+	fmt.Println("Processing block")
 	// we do not want to proccess new cross-tx'es, or original tx'es (UTXO's in original TX are still spendable)
 	for _, t := range b.ProposedBlock.Transactions {
 		what := t.whatAmI(nodeCtx)
+		fmt.Println("processBlock: ", what)
+		fmt.Println(t)
 		if what == "normal" {
 			var tot uint = 0
 			var totOut uint = 0
@@ -698,6 +796,7 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 			if tot != totOut && b.Signatures != nil {
 				errFatal(nil, fmt.Sprintf("Spent value %d not equal to new unspent value %d", tot, totOut))
 			}
+			continue
 		} else if what == "crosstx" {
 			// do nothing (no inputs in this committee)
 			continue
@@ -705,11 +804,21 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 			// add inputs to special map so we can keep track of originalTx and its cross-txes
 			nodeCtx.crossTxPool.addOriginalTx(nodeCtx, t)
 			continue
-		} else if what == "crosstxresponse" {
+		} else if what == "crosstxresponse_C_in" {
 			// spend inputs, but do not add outputs, because they belong in another committee
 			for _, inp := range t.Inputs {
 				nodeCtx.utxoSet._removeOutput(inp.TxHash, inp.N)
 			}
+			continue
+		} else if what == "crosstxresponse_C_out" {
+			// add outputs, but do not do anything with inputs, because they come from another comittee
+			if len(t.Inputs) != len(t.Outputs) {
+				errFatal(nil, "input n output length not equal idkrn")
+			}
+			for i := range t.Outputs {
+				nodeCtx.utxoSet._add(t.Inputs[i].TxHash, t.Outputs[i])
+			}
+			nodeCtx.crossTxPool.addResponses(t)
 			continue
 		} else if what == "finaltransaction" {
 			// get crossTxMap
@@ -742,9 +851,13 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 				tot += UTXO.Value
 			}
 
+			if t.OrigTxHash != original.OrigTxHash || t.OrigTxHash == [32]byte{} {
+				errFatal(nil, "orighasshes not equal akjb3")
+			}
+
 			// add outputs
 			for _, out := range t.Outputs {
-				nodeCtx.utxoSet._add(t.Hash, out)
+				nodeCtx.utxoSet._add(t.OrigTxHash, out)
 				totOut += out.Value
 			}
 
@@ -755,9 +868,18 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 			// remove original tx and crosstxmap from crossTxPool
 			nodeCtx.crossTxPool.removeOriginal(t.OrigTxHash)
 			nodeCtx.crossTxPool.removeMap(t.OrigTxHash)
+			continue
+		} else {
+			errFatal(nil, "unknow whatAmI ")
 		}
-
 	}
+
+	// remove transactions from tx pool
+	nodeCtx.txPool.processBlock(b.ProposedBlock.Transactions)
+
+	// print utxo set
+	fmt.Println(nodeCtx.utxoSet)
+
 	nodeCtx.utxoSet.mux.Unlock()
 }
 
@@ -1336,8 +1458,15 @@ type NodeCtx struct {
 	committeeList        [][32]byte //list of all committee ids, to be replaced with reference block?
 	txPool               TxPool
 	crossTxPool          CrossTxPool
-	utxoSet              UTXOSet
+	utxoSet              *UTXOSet
 	blockchain           Blockchain
+}
+
+func (nc *NodeCtx) amILeader() bool {
+	if nc.self.Priv.Pub.Bytes == nc.committee.CurrentLeader.Bytes {
+		return true
+	}
+	return false
 }
 
 // generic msg. typ indicates which struct to decode msg to.
