@@ -112,12 +112,10 @@ Orig transacrtions from user_1
 	Inputs
 		0	// value 25
 			TxId 			ef2		// C_3
-			OrigInputTxId	nil
 			N				2
 			Sig				of ef2 and a2c
 		1	// value 20
 			TxId			zb4		// C_2
-			OrigInputTxId	nil
 			N 				1
 			Sig				of zb4 and a2c
 	Outputs
@@ -141,7 +139,6 @@ Cross-tx 1 to C_3
 	Inputs
 		0	// value 25 this is know to C_3
 			TxId 			ef2		// C_3
-			OrigInputTxID	nil		// C_3
 			N				2
 			Sig				of ef2 and a2c
 	Outputs			nil
@@ -154,7 +151,6 @@ Response to C_1 from C_3
 		Inputs
 			0
 				TxId 			ef2		// C_3
-				OrigInputTxId	nil		//
 				N				2
 				Sig				Of ef2 and a2c
 		Outputs // Problem, hash of tx is not TxID, therefor wee need an identifier to see if it is a cross-tx
@@ -177,43 +173,16 @@ fulfill the original Tx. If it was leader should make the final transaction (and
 
 Final transaction given that cross-tx1-r and cross-tx2-r have been recived (and possibly already added to block)
 
-Final transaction
-	TxID 		qxk		// unsigned
-	OrigTxId	a2c
-	Inputs
-		0	// value 25
-			TxId 			skr		// cross-tx1-r TxId unsigned
-			OrigInputTxId	ef2
-			N				0
-			Sig				Sig of ef2 and a2c
-		1	// value 20
-			TxId			abc		// cross-tx2-r TxID unsigned
-			OrigInputTxId	zb4
-			N 				0
-			Sig				Sig of zb4 and a2c
-	Outputs
-		0
-			Value 	30
-			N		0
-			PubKey	user_2
-		1
-			Value 15
-			N 		1
-			PubKey  user_1 // rest back to self
-
-
 Final transaction improved
 	TxID 		qxk		// unsigned
 	OrigTxId	a2c
 	Inputs
 		0	// value 25
 			TxId 			ef2
-			OrigInputTxId	nil
 			N				0
 			Sig				Sig of ef2 and a2c
 		1	// value 20
 			TxId			zb4
-			OrigInputTxId	nil
 			N 				0
 			Sig				Sig of zb4 and a2c
 	Outputs
@@ -231,25 +200,6 @@ is validated. And all is good!
 
 QED
 
-name change also included
-user_1 using final transaction
-	Hash 		nro
-	OrigTxHash	nil
-	Inputs
-		0	// value 15
-			TxHash 			qxk		// final-cross-tx
-			OrigTxHash		a2c		// input to orig
-			N				1
-			Sig				Sig of ef2 and a2c
-	Outputs
-		0
-			Value 	10
-			N		0
-			PubKey	user_2
-		1
-			Value 	5
-			N 		1
-			PubKey  user_1 // rest back to self
 
 user_1 using final transaction Better version?
 	Hash 		nro
@@ -257,7 +207,6 @@ user_1 using final transaction Better version?
 	Inputs
 		0	// value 15
 			TxHash 			a2c		// final-cross-tx
-			OrigTxHash		nil		// input to orig
 			N				1
 			Sig				Sig of a2c and nro
 	Outputs
@@ -688,9 +637,6 @@ func validateInput(nodeCtx *NodeCtx, iTx *InTx, txID [32]byte, spentUTXOSet *UTX
 		fmt.Println("OutTx", outTx)
 		fmt.Println("Input", iTx)
 		fmt.Println("txhash", bytesToString(iTx.TxHash[:]))
-		fmt.Println("origtxhash", bytesToString(iTx.OrigTxHash[:]))
-		iddd := iTx.id()
-		fmt.Println("id", bytesToString(iddd[:]))
 		return false
 	}
 

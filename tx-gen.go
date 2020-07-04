@@ -212,7 +212,6 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 
 		newInTx := new(InTx)
 		newInTx.TxHash = o.txID
-		newInTx.OrigTxHash = [32]byte{}
 		newInTx.N = outTx.N
 		inputs[i] = newInTx
 	}

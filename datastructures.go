@@ -511,14 +511,13 @@ type txIDNonceTuple struct {
 }
 
 type InTx struct {
-	TxHash     [32]byte // output in transaction
-	OrigTxHash [32]byte // see cross-tx
-	N          uint     // nonce in output in transaction
-	Sig        *Sig     // Sig of TxHash, OrigTxHash, N, TxHash, OrigTxHash
+	TxHash [32]byte // output in transaction
+	N      uint     // nonce in output in transaction
+	Sig    *Sig     // Sig of TxHash, OrigTxHash, N, TxHash, OrigTxHash
 }
 
 func (iTx *InTx) String() string {
-	return fmt.Sprintf("[InTx] TxHash: %s, OrigTxHash: %s,\n\t\t N: %d, Sig: %s", bytes32ToString(iTx.TxHash), bytes32ToString(iTx.OrigTxHash), iTx.N, bytesToString(iTx.Sig.bytes()))
+	return fmt.Sprintf("[InTx] TxHash: %s, OrigTxHash: %s,\n\t\t N: %d, Sig: %s", bytes32ToString(iTx.TxHash), iTx.N, bytesToString(iTx.Sig.bytes()))
 }
 
 type OutTx struct {
@@ -545,8 +544,7 @@ func (iTx *InTx) bytesWithSig() []byte {
 }
 
 func (iTx *InTx) bytesExceptSig() []byte {
-	id := iTx.id()
-	return byteSliceAppend(id[:], uintToByte(iTx.N))
+	return byteSliceAppend(iTx.TxHash[:], uintToByte(iTx.N))
 }
 
 func (iTx *InTx) getHash(extra [32]byte) [32]byte {
@@ -555,16 +553,6 @@ func (iTx *InTx) getHash(extra [32]byte) [32]byte {
 
 func (iTx *InTx) sign(extra [32]byte, priv *PrivKey) {
 	iTx.Sig = priv.sign(iTx.getHash(extra))
-}
-
-func (iTx *InTx) id() [32]byte {
-	id := [32]byte{}
-	if iTx.TxHash != [32]byte{} {
-		id = iTx.TxHash
-	} else {
-		id = iTx.OrigTxHash
-	}
-	return id
 }
 
 type ProofOfConsensus struct {
