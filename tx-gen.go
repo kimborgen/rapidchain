@@ -135,6 +135,8 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	time.Sleep(3 * time.Second)
 	rand.Seed(42)
 	for {
+		before := time.Now()
+
 		l := len(finalBlockChan)
 		for i := 0; i < l; i++ {
 			fmt.Println("Recived finalblock")
@@ -186,23 +188,11 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 
 		_txGenerator(flagArgs, &allNodes, users, userSets, transactionTracker)
 
-		// fmt.Println("Sleeping for ", dur)
-		time.Sleep(time.Second / time.Duration(flagArgs.tps))
+		// Sleep such that time used to process finishedblock and create new tx is subtracted such that we emulate near perfect tps.
+		after := time.Now()
+		// fmt.Println("Sleep for: ", (time.Second/time.Duration(flagArgs.tps))-after.Sub(before))
+		time.Sleep((time.Second / time.Duration(flagArgs.tps)) - after.Sub(before))
 		i++
-		// if i == 30 {
-		// 	return
-		// }
-		// if i%10 == 0 {
-		// 	tot := 0
-		// 	for _, u := range userSets {
-		// 		for _, t := range u.set {
-		// 			for range t {
-		// 				tot++
-		// 			}
-		// 		}
-		// 	}
-		// 	fmt.Println(tot)
-		// }
 	}
 }
 
