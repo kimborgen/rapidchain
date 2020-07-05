@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"time"
 )
@@ -79,6 +80,19 @@ func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *
 	return finalBlocks
 }
 
+type Tracker struct {
+	t         *Transaction
+	sent      time.Time
+	recived   time.Time
+	dur       time.Duration
+	crossTxes uint
+}
+
+func (t *Tracker) completeTx() {
+	t.recived = time.Now()
+	t.dur = t.recived.Sub(t.sent)
+}
+
 func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlocks []*FinalBlock, finalBlockChan chan FinalBlock) {
 	// Emulates users by continously generating transactions
 
@@ -115,6 +129,8 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	nodeCtx := new(NodeCtx)
 	nodeCtx.committeeList = cList
 
+	transactionTracker := make(map[[32]byte]*Tracker)
+
 	i := 0
 	time.Sleep(3 * time.Second)
 	rand.Seed(42)
@@ -124,36 +140,51 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 			fmt.Println("Recived finalblock")
 			finalBlock := <-finalBlockChan
 			fmt.Println(finalBlock.ProposedBlock)
-
 			for _, t := range finalBlock.ProposedBlock.Transactions {
 				if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs == nil {
-					fmt.Println("crosstx")
+					// fmt.Println("crosstx")
 					// return "crosstx"
+					if _, ok := transactionTracker[t.OrigTxHash]; !ok {
+						fmt.Println("T: ", t)
+						fmt.Println("Tracker: ", transactionTracker[t.OrigTxHash])
+						errFatal(nil, "transaction in recived finalblock not in transactionTracker")
+					}
+
+					// increase crosstx counter for this transaction
+					transactionTracker[t.OrigTxHash].crossTxes++
 					continue
 				} else if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs != nil {
 					// return "originaltx"
-					fmt.Println("originaltx")
+					// fmt.Println("originaltx")
 					continue
 				} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && txFindClosestCommittee(nodeCtx, t.OrigTxHash) != finalBlock.ProposedBlock.CommitteeID {
 					// return "crosstxresponse"
-					fmt.Println("crosstxresponse_C_in")
+					// fmt.Println("crosstxresponse_C_in")
 					continue
 				} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && t.ProofOfConsensus != nil {
 					// TODO ADD crosstxresponse_C_out or not
-					fmt.Println("crosstxresponse_C_out")
+					// fmt.Println("crosstxresponse_C_out")
 					continue
 				}
 
-				fmt.Print("normal or final")
-				fmt.Println(t)
+				id := t.ifOrigRetOrigIfNotRetHash()
+				if _, ok := transactionTracker[id]; !ok {
+					fmt.Println("id", id)
+					fmt.Println("T: ", t)
+					fmt.Println("Tracker: ", transactionTracker[id])
+					errFatal(nil, "transaction in recived finalblock not in transactionTracker")
+				}
+				transactionTracker[id].completeTx()
+				log.Println("tx finished in ", transactionTracker[id].dur.Seconds(), " seconds, with ", transactionTracker[id].crossTxes, " crosstxes.")
 
 				for _, out := range t.Outputs {
-					userSets[out.PubKey.Bytes].add(t.ifOrigRetOrigIfNotRetHash(), out)
+					userSets[out.PubKey.Bytes].add(id, out)
 				}
+
 			}
 		}
 
-		_txGenerator(flagArgs, &allNodes, users, userSets)
+		_txGenerator(flagArgs, &allNodes, users, userSets, transactionTracker)
 
 		// fmt.Println("Sleeping for ", dur)
 		time.Sleep(time.Second / time.Duration(flagArgs.tps))
@@ -175,7 +206,8 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	}
 }
 
-func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey, userSets map[[32]byte]*UTXOSet) {
+func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey, userSets map[[32]byte]*UTXOSet, transactionTracker map[[32]byte]*Tracker) {
+
 	//fmt.Println("_txGen")
 
 	// pick random user to send transaction from
@@ -186,7 +218,7 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	totVal := userSets[user.Pub.Bytes].totalValue()
 	if totVal == 0 {
 		// no value in this user unfortuantly, so start again
-		_txGenerator(flagArgs, allNodes, users, userSets)
+		_txGenerator(flagArgs, allNodes, users, userSets, transactionTracker)
 		return
 	}
 	valueToSend := uint(rand.Intn(int(totVal)) + 1)
@@ -253,6 +285,16 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	// send transaction
 	msg := Msg{"transaction", t, user.Pub}
 	go dialAndSend(node.IP, msg)
+
+	if _, ok := transactionTracker[t.Hash]; ok {
+		fmt.Println("Previous tx: ", transactionTracker[t.Hash])
+		fmt.Println("New tx: ", t)
+		errFatal(nil, "transaction allready sent")
+	}
+	track := new(Tracker)
+	track.t = t
+	track.sent = time.Now()
+	transactionTracker[t.Hash] = track
 
 	// add output to sets
 	// for _, out := range t.Outputs {
