@@ -144,7 +144,7 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 			fmt.Println(finalBlock.ProposedBlock)
 			for _, t := range finalBlock.ProposedBlock.Transactions {
 				if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs == nil {
-					// fmt.Println("crosstx")
+					fmt.Println("crosstx")
 					// return "crosstx"
 					if _, ok := transactionTracker[t.OrigTxHash]; !ok {
 						fmt.Println("T: ", t)
@@ -157,15 +157,15 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 					continue
 				} else if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs != nil {
 					// return "originaltx"
-					// fmt.Println("originaltx")
+					fmt.Println("originaltx")
 					continue
 				} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && txFindClosestCommittee(nodeCtx, t.OrigTxHash) != finalBlock.ProposedBlock.CommitteeID {
 					// return "crosstxresponse"
-					// fmt.Println("crosstxresponse_C_in")
+					fmt.Println("crosstxresponse_C_in")
 					continue
 				} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} && t.ProofOfConsensus != nil {
 					// TODO ADD crosstxresponse_C_out or not
-					// fmt.Println("crosstxresponse_C_out")
+					fmt.Println("crosstxresponse_C_out")
 					continue
 				}
 
@@ -177,7 +177,17 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 					errFatal(nil, "transaction in recived finalblock not in transactionTracker")
 				}
 				transactionTracker[id].completeTx()
-				log.Println("tx finished in ", transactionTracker[id].dur.Seconds(), " seconds, with ", transactionTracker[id].crossTxes, " crosstxes.")
+
+				var normalorfinal string
+				if t.Hash != [32]byte{} && t.OrigTxHash == [32]byte{} {
+					normalorfinal = "normal"
+				} else if t.Hash != [32]byte{} && t.OrigTxHash != [32]byte{} {
+					normalorfinal = "final"
+				} else {
+					errFatal(nil, t.String())
+				}
+
+				log.Println(normalorfinal, " tx finished in ", transactionTracker[id].dur.Seconds(), " seconds, with ", transactionTracker[id].crossTxes, " crosstxes.")
 
 				for _, out := range t.Outputs {
 					userSets[out.PubKey.Bytes].add(id, out)
@@ -198,18 +208,25 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 
 func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey, userSets map[[32]byte]*UTXOSet, transactionTracker map[[32]byte]*Tracker) {
 
-	//fmt.Println("_txGen")
-
 	// pick random user to send transaction from
 	rnd := rand.Intn(len(*users))
 	user := (*users)[rnd]
 
 	// pick a random value from the users total value
-	totVal := userSets[user.Pub.Bytes].totalValue()
-	if totVal == 0 {
-		// no value in this user unfortuantly, so start again
-		_txGenerator(flagArgs, allNodes, users, userSets, transactionTracker)
-		return
+	totVal := userSets[user.Pub.Bytes]._totalValue()
+
+	for {
+		if totVal == 0 {
+			// no value in this user unfortuantly, so start again
+			rnd = rand.Intn(len(*users))
+			user = (*users)[rnd]
+
+			// pick a random value from the users total value
+			totVal = userSets[user.Pub.Bytes]._totalValue()
+		} else {
+			break
+		}
+
 	}
 	valueToSend := uint(rand.Intn(int(totVal)) + 1)
 
@@ -266,7 +283,7 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	// fmt.Println(bytes32ToString(t.Inputs[0].TxHash), bytes32ToString(t.Inputs[0].OrigTxHash), bytes32ToString(t.id()), t.Inputs[0].N, t.Inputs[0].Sig)
 	// fmt.Println(bytes32ToString(t.Outputs[0].PubKey.Bytes), t.Outputs[0].Value, t.Outputs[0].N)
 
-	fmt.Println("Sent tx: ", t)
+	// fmt.Println("Sent tx: ", t)
 
 	// pick random node to send tx to
 	rndNode := rand.Intn(len(*allNodes))

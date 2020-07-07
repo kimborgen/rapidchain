@@ -462,15 +462,26 @@ func (s *UTXOSet) getLenOfEntireSet() int {
 	return l
 }
 
+func (s *UTXOSet) _totalValue() uint {
+	// finds the total value that is in the UTXO set, usefull for each user to know their balance
+	var tot uint = 0
+	for _, txid := range s.set {
+		for _, nonce := range txid {
+			tot += nonce.Value
+		}
+	}
+	return tot
+}
+
 func (s *UTXOSet) totalValue() uint {
 	// finds the total value that is in the UTXO set, usefull for each user to know their balance
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
 	var tot uint = 0
-	for txID := range s.set {
-		for nonce := range s.set[txID] {
-			tot += s.set[txID][nonce].Value
+	for _, txid := range s.set {
+		for _, nonce := range txid {
+			tot += nonce.Value
 		}
 	}
 	return tot
