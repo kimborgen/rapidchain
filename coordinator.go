@@ -61,7 +61,21 @@ func launchCoordinator(flagArgs *FlagArgs) {
 
 	finalBlockChan := make(chan FinalBlock, flagArgs.m*2)
 
-	go coordinator(chanToCoordinator, chanToNodes, &wg, flagArgs, finalBlockChan)
+	var err error
+
+	// result files
+	files := make([]*os.File, 3)
+	files[0], err = os.Create("results/tx" + time.Now().String() + ".csv")
+	ifErrFatal(err, "txresfile")
+	files[1], err = os.Create("results/pocverify" + time.Now().String() + ".csv")
+	ifErrFatal(err, "pocverifyfile")
+	files[2], err = os.Create("results/pocadd" + time.Now().String() + ".csv")
+	ifErrFatal(err, "pocaddfile")
+	for _, f := range files {
+		defer f.Close()
+	}
+
+	go coordinator(chanToCoordinator, chanToNodes, &wg, flagArgs, finalBlockChan, files)
 
 	listener, err := net.Listen("tcp", ":8080")
 	ifErrFatal(err, "tcp listen on port 8080")
@@ -92,18 +106,6 @@ func launchCoordinator(flagArgs *FlagArgs) {
 
 	// committee -> iteration -> echo, pending, accept messages
 	consensusResults := new(consensusResult)
-
-	// result files
-	files := make([]*os.File, 3)
-	files[0], err = os.Create("results/tx" + time.Now().String() + ".csv")
-	ifErrFatal(err, "txresfile")
-	files[1], err = os.Create("results/pocverify" + time.Now().String() + ".csv")
-	ifErrFatal(err, "pocverifyfile")
-	files[2], err = os.Create("results/pocadd" + time.Now().String() + ".csv")
-	ifErrFatal(err, "pocaddfile")
-	for _, f := range files {
-		defer f.Close()
-	}
 
 	// start listening for debug/stats
 	for {
@@ -150,7 +152,8 @@ func coordinator(
 	chanToNodes []chan ResponseToNodes,
 	wg *sync.WaitGroup,
 	flagArgs *FlagArgs,
-	finalBlockChan chan FinalBlock) {
+	finalBlockChan chan FinalBlock,
+	files []*os.File) {
 
 	// wait untill all node connections have pushed an ID/IP to chan
 	wg.Wait()
@@ -287,16 +290,22 @@ func coordinator(
 		c <- msg
 	}
 
-	txGenerator(flagArgs, nodeInfos, users, genesisBlocks, finalBlockChan)
+	txGenerator(flagArgs, nodeInfos, users, genesisBlocks, finalBlockChan, files)
+}
+
+func prepareResultString(s string) string {
+	tmp := strconv.FormatInt(time.Now().Unix(), 10)
+	tmp += ","
+	tmp += s
+	tmp += "\n"
+	return tmp
 }
 
 func writeIntToFile(integer int64, f *os.File) {
-	tmp := strconv.FormatInt(time.Now().Unix(), 10)
-	tmp += ","
-	tmp += strconv.FormatInt(integer, 10)
-	tmp += "\n"
 
-	f.WriteString(tmp)
+	s := prepareResultString(strconv.FormatInt(integer, 10))
+
+	f.WriteString(s)
 	f.Sync()
 }
 

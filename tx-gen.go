@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -85,15 +87,23 @@ type Tracker struct {
 	sent      time.Time
 	recived   time.Time
 	dur       time.Duration
-	crossTxes uint
+	crossTxes uint64
 }
 
-func (t *Tracker) completeTx() {
+func (t *Tracker) completeTx(files []*os.File) {
 	t.recived = time.Now()
 	t.dur = t.recived.Sub(t.sent)
+
+	dur := strconv.FormatFloat(t.dur.Seconds(), 'f', 4, 64)
+	cross := strconv.FormatUint(t.crossTxes, 10)
+
+	s := prepareResultString(dur + "," + cross)
+
+	files[0].WriteString(s)
+	files[0].Sync()
 }
 
-func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlocks []*FinalBlock, finalBlockChan chan FinalBlock) {
+func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlocks []*FinalBlock, finalBlockChan chan FinalBlock, files []*os.File) {
 	// Emulates users by continously generating transactions
 
 	if flagArgs.tps == 0 {
@@ -176,7 +186,7 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 					fmt.Println("Tracker: ", transactionTracker[id])
 					errFatal(nil, "transaction in recived finalblock not in transactionTracker")
 				}
-				transactionTracker[id].completeTx()
+				transactionTracker[id].completeTx(files)
 
 				var normalorfinal string
 				if t.Hash != [32]byte{} && t.OrigTxHash == [32]byte{} {
