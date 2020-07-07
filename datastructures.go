@@ -39,10 +39,10 @@ type PlaceHolder struct {
 }
 
 type ResponseToNodes struct {
-	Nodes            []NodeAllInfo
-	GensisisBlocks   []*FinalBlock
-	DebugNode        [32]byte
-	InitalRandomness [32]byte
+	Nodes                []NodeAllInfo
+	GensisisBlocks       []*FinalBlock
+	DebugNode            [32]byte
+	ReconfigurationBlock *ReconfigurationBlock
 }
 
 // Representation of a member beloning to the current committee of a node
@@ -56,20 +56,20 @@ type Committee struct {
 	ID            [32]byte
 	BigIntID      *big.Int
 	CurrentLeader *PubKey
-	Members       map[[32]byte]CommitteeMember
+	Members       map[[32]byte]*CommitteeMember
 }
 
 func (c *Committee) init(ID [32]byte) {
 	c.ID = ID
 	c.BigIntID = new(big.Int).SetBytes(ID[:])
-	c.Members = make(map[[32]byte]CommitteeMember)
+	c.Members = make(map[[32]byte]*CommitteeMember)
 }
 
-func (c *Committee) addMember(m CommitteeMember) {
+func (c *Committee) addMember(m *CommitteeMember) {
 	c.Members[m.Pub.Bytes] = m
 }
 
-func (c *Committee) safeAddMember(m CommitteeMember) bool {
+func (c *Committee) safeAddMember(m *CommitteeMember) bool {
 	if _, ok := c.Members[m.Pub.Bytes]; !ok {
 		return false
 	}
@@ -1056,10 +1056,29 @@ func (cMsgs *ConsensusMsgs) getLen(gh [32]byte) uint {
 
 // Todo define, extend and create reconfiguration block
 type ReconfigurationBlock struct {
-	Hash         [32]byte
-	CommitteeIDs [][32]byte
-	Members      map[[32]byte]*CommitteeMember
-	Randomness   [32]byte
+	Hash       [32]byte
+	Committees map[[32]byte]*Committee
+	Randomness [32]byte
+}
+
+func (rb *ReconfigurationBlock) init() {
+	rb.Committees = make(map[[32]byte]*Committee)
+}
+
+func (rb *ReconfigurationBlock) calculateHash() [32]byte {
+	// calculate hash of all committee ids, all comittee members public key and randomness
+	var toHash []byte = rb.Randomness[:]
+	for _, committee := range rb.Committees {
+		toHash = append(toHash, committee.ID[:]...)
+		for _, member := range committee.Members {
+			toHash = append(toHash, member.Pub.Bytes[:]...)
+		}
+	}
+	return hash(toHash)
+}
+
+func (rb *ReconfigurationBlock) setHash() {
+	rb.Hash = rb.calculateHash()
 }
 
 type Blockchain struct {
@@ -1236,7 +1255,7 @@ func (r *RoutingTable) addCommittee(i uint, ID [32]byte) {
 	r.mux.Unlock()
 }
 
-func (r *RoutingTable) addMember(i uint, cm CommitteeMember) {
+func (r *RoutingTable) addMember(i uint, cm *CommitteeMember) {
 	r.mux.Lock()
 	r.l[i].addMember(cm)
 	r.mux.Unlock()

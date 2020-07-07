@@ -245,15 +245,29 @@ func coordinator(
 	users := genUsers(flagArgs)
 	genesisBlocks := genGenesisBlock(flagArgs, committeeInfos, users)
 
-	// fmt.Println(genesisBlocks)
-	//fmt.Println("gb, ", genesisBlocks[0].proposedBlock.GossipHash)
-
+	// create reconfiguration block
+	rBlock := new(ReconfigurationBlock)
+	rBlock.init()
+	for _, committeeInfo := range committeeInfos {
+		newCom := new(Committee)
+		newCom.init(committeeInfo.id)
+		for _, node := range nodeInfos {
+			if node.CommitteeID == newCom.ID {
+				tmp := new(CommitteeMember)
+				tmp.Pub = node.Pub
+				tmp.IP = node.IP
+				newCom.addMember(tmp)
+			}
+		}
+		rBlock.Committees[newCom.ID] = newCom
+	}
 	// create initial randomness
 	rnd := make([]byte, 32)
 	rand.Read(rnd)
-	initialRandomness := hash(rnd)
+	rBlock.Randomness = hash(rnd)
+	rBlock.setHash()
 
-	msg := ResponseToNodes{nodeInfos, genesisBlocks, nodeInfos[0].Pub.Bytes, initialRandomness}
+	msg := ResponseToNodes{nodeInfos, genesisBlocks, nodeInfos[0].Pub.Bytes, rBlock}
 
 	for _, c := range chanToNodes {
 		c <- msg

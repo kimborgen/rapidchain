@@ -27,7 +27,6 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 	// declare variables to return
 	allInfo := make(map[[32]byte]NodeAllInfo)
 	var selfInfo SelfInfo
-	var initialRandomness [32]byte
 	var currentCommittee Committee
 	var routingTable RoutingTable
 
@@ -49,14 +48,15 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 	// delete self from allInfo
 	delete(allInfo, privKey.Pub.Bytes)
 
-	initialRandomness = response.InitalRandomness
-
 	// create current commitee info
 	currentCommittee.init(selfInfo.CommitteeID)
 
 	for k, v := range allInfo {
 		if v.CommitteeID == currentCommittee.ID {
-			currentCommittee.Members[k] = CommitteeMember{v.Pub, v.IP}
+			tmp := new(CommitteeMember)
+			tmp.IP = v.IP
+			tmp.Pub = v.Pub
+			currentCommittee.Members[k] = tmp
 		}
 	}
 
@@ -160,7 +160,9 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 		}
 		for _, j := range indexes {
 			node := nodesInKadamliaCommittees[c][j]
-			tmp := CommitteeMember{node.Pub, node.IP}
+			tmp := new(CommitteeMember)
+			tmp.Pub = node.Pub
+			tmp.IP = node.IP
 			routingTable.addMember(uint(i), tmp)
 		}
 	}
@@ -200,10 +202,7 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 	nodeCtx.blockchain = Blockchain{}
 	nodeCtx.blockchain.init(selfInfo.CommitteeID)
 
-	// TODO add real reconfiguration block
-	recBlock := new(ReconfigurationBlock)
-	recBlock.Randomness = initialRandomness
-	nodeCtx.blockchain.addRecBlock(recBlock)
+	nodeCtx.blockchain.addRecBlock(response.ReconfigurationBlock)
 
 	gb := response.GensisisBlocks
 	// fmt.Println(gb)
