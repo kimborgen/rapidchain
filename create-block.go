@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/kimborgen/go-merkletree"
 )
@@ -395,10 +396,13 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	addedUTXOSet *UTXOSet,
 	tmpCrossTxPool *CrossTxPool) (*Transaction, bool) {
 
+	// calculate time it took to validate
+	before := time.Now()
+
+	// verify proof of consensus (PoC):
 	if t.ProofOfConsensus == nil {
 		errFatal(nil, "Proof of consensus was nil")
 	}
-	// verify proof of consensus (PoC):
 
 	// PoC: validate merkle proof
 	tmpid := t.ifOrigRetOrigIfNotRetHash()
@@ -437,6 +441,9 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 			errFatal(nil, "signature pub did not exist in that committee")
 		}
 	}
+
+	dur := time.Now().Sub(before)
+	go dialAndSendToCoordinator("pocverify", dur)
 
 	// add output to temp
 	if len(t.Inputs) != len(t.Outputs) {

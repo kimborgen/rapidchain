@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/kimborgen/go-merkletree"
 )
@@ -21,6 +22,8 @@ func createMerkleTree(nodeCtx *NodeCtx, transactions []*Transaction) *merkletree
 }
 
 func addProofOfConsensus(nodeCtx *NodeCtx, t *Transaction, finalBlock *FinalBlock) {
+
+	before := time.Now()
 	t.ProofOfConsensus = new(ProofOfConsensus)
 	t.ProofOfConsensus.GossipHash = finalBlock.ProposedBlock.GossipHash
 	t.ProofOfConsensus.IntermediateHash = finalBlock.ProposedBlock.calculateHashExceptMerkleRoot()
@@ -60,5 +63,8 @@ func addProofOfConsensus(nodeCtx *NodeCtx, t *Transaction, finalBlock *FinalBloc
 	t.ProofOfConsensus.MerkleRoot = root32
 	t.ProofOfConsensus.MerkleProof = proof
 
-	fmt.Println("new tx: ", t)
+	dur := time.Now().Sub(before)
+	go dialAndSendToCoordinator("pocadd", dur)
+
+	fmt.Println("new tx PoC : ", t)
 }
