@@ -68,7 +68,7 @@ func main() {
 	if flagArgs.local {
 		coord = coord_local
 	} else {
-		coord = coord_gcloud
+		coord = coord_aws
 	}
 	log.Println("Coordinator IP: ", coord)
 
