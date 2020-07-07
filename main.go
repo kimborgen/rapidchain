@@ -5,7 +5,7 @@ import (
 	"crypto/elliptic"
 	"encoding/gob"
 	"flag"
-	"runtime"
+	"log"
 )
 
 func main() {
@@ -24,6 +24,7 @@ func main() {
 	nUsersPtr := flag.Uint("nUsers", default_nUsers, "users in system")
 	totalCointsPtr := flag.Uint("totalCoins", default_totalCoins, "total coins in system")
 	tpsPtr := flag.Uint("tps", default_tps, "transactions per second")
+	localPtr := flag.Bool("local", false, "local run on this computer")
 
 	flag.Parse()
 
@@ -41,6 +42,7 @@ func main() {
 	flagArgs.nUsers = *nUsersPtr
 	flagArgs.totalCoins = *totalCointsPtr
 	flagArgs.tps = *tpsPtr
+	flagArgs.local = *localPtr
 
 	// generate a random key to send the P256 curve interface to gob.Register because it wouldnt cooperate
 	randomKey := new(PrivKey)
@@ -60,6 +62,13 @@ func main() {
 	gob.Register(Transaction{})
 	gob.Register(FinalBlock{})
 
+	if flagArgs.local {
+		coord = coord_local
+	} else {
+		coord = coord_gcloud
+	}
+	log.Println("Coordinator IP: ", coord)
+
 	// ensure some invariants
 	if default_kappa > 256 {
 		errFatal(nil, "Default kappa was over 256/1byte")
@@ -69,7 +78,7 @@ func main() {
 		errFatal(nil, "more neighbours than members in committee")
 	}
 
-	runtime.GOMAXPROCS(int(flagArgs.vCPUs))
+	// runtime.GOMAXPROCS(int(flagArgs.vCPUs))
 
 	if *functionPtr == "coordinator" {
 		launchCoordinator(&flagArgs)
