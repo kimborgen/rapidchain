@@ -264,14 +264,8 @@ func createProposeBlock(nodeCtx *NodeCtx) *ProposedBlock {
 	block.CommitteeID = nodeCtx.self.CommitteeID
 	block.LeaderPub = nodeCtx.self.Priv.Pub
 
-	// create merkle tree of transactions
-	data := make([][]byte, len(txes))
-	for i := range data {
-		data[i] = txes[i].encode()
-	}
+	tree := createMerkleTree(nodeCtx, txes)
 
-	tree, err := merkletree.New(data)
-	ifErrFatal(err, "Could not create transaction merkle tree")
 	block.MerkleRoot = toByte32(tree.Root())
 
 	// set hash
@@ -400,10 +394,36 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	spentUTXOSet *UTXOSet,
 	addedUTXOSet *UTXOSet,
 	tmpCrossTxPool *CrossTxPool) (*Transaction, bool) {
-	// validate inputs with proof of consensus TODO
 
 	if t.ProofOfConsensus == nil {
 		errFatal(nil, "Proof of consensus was nil")
+	}
+	// verify proof of consensus (PoC):
+
+	// PoC: validate merkle proof
+	tmpid := t.ifOrigRetOrigIfNotRetHash()
+	verified, err := merkletree.VerifyProof(tmpid[:], false, t.ProofOfConsensus.MerkleProof, [][]byte{t.ProofOfConsensus.MerkleRoot[:]})
+	fail := ifErr(err, "merkletree.Verifyproof")
+	if fail || !verified {
+		errFatal(err, "proof could not be verified")
+	}
+
+	// PoC: validate hashes
+	mrHash := hash(t.ProofOfConsensus.MerkleRoot[:])
+	valHash := hash(byteSliceAppend(t.ProofOfConsensus.IntermediateHash[:], mrHash[:]))
+	if valHash != t.ProofOfConsensus.GossipHash {
+		errFatal(nil, fmt.Sprintf("ProofOfConsensus hashes invalid. calculatedhash: %s, GossipHash: %s", bytes32ToString(valHash), bytes32ToString(t.ProofOfConsensus.GossipHash)))
+	}
+
+	// PoC: validate signatures:
+	// TODO Verify against reconfiguration block
+
+	if uint(len(t.ProofOfConsensus.Signatures)) < (nodeCtx.flagArgs.n/nodeCtx.flagArgs.m)/nodeCtx.flagArgs.committeeF {
+		errFatal(nil, fmt.Sprintf("Len of signatures: %d was lower than required: %d ", len(t.ProofOfConsensus.Signatures), (nodeCtx.flagArgs.n/nodeCtx.flagArgs.m)/nodeCtx.flagArgs.committeeF))
+	}
+	for _, cMsg := range t.ProofOfConsensus.Signatures {
+		ok := cMsg.Pub.verify(cMsg.calculateHash(), cMsg.Sig)
+		notOkErr(ok, "signature verify")
 	}
 
 	// add output to temp

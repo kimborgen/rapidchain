@@ -186,19 +186,14 @@ func handleConsensusAccept(
 		for _, t := range finalBlock.ProposedBlock.Transactions {
 			what := t.whatAmI(nodeCtx)
 			if what == "crosstxresponse_C_in" {
+
 				// we do not want to have PoC on final blocks that are in this committee
 				// so make a copy
 
 				newTx := new(Transaction)
 				copier.Copy(newTx, t)
 
-				newTx.ProofOfConsensus = new(ProofOfConsensus)
-				newTx.ProofOfConsensus.GossipHash = block.GossipHash
-				newTx.ProofOfConsensus.IntermediateHash = block.calculateHashExceptMerkleRoot()
-				newTx.ProofOfConsensus.MerkleRoot = block.MerkleRoot
-				// todo add merkleproof
-				newTx.ProofOfConsensus.Signatures = finalBlock.Signatures
-				// finalBlock.ProposedBlock.Transactions[i] = t
+				addProofOfConsensus(nodeCtx, newTx, finalBlock)
 
 				msg := Msg{"crosstransactionresponse", newTx, nodeCtx.self.Priv.Pub}
 				go routeTx(nodeCtx, msg, txFindClosestCommittee(nodeCtx, newTx.OrigTxHash))

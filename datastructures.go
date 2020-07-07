@@ -571,12 +571,12 @@ type ProofOfConsensus struct {
 	GossipHash       [32]byte
 	IntermediateHash [32]byte
 	MerkleRoot       [32]byte
-	MerkleProof      merkletree.Proof
+	MerkleProof      *merkletree.Proof
 	Signatures       []*ConsensusMsg
 }
 
 func (poc *ProofOfConsensus) String() string {
-	str := fmt.Sprintf("[PoC] GossipHash: %s, IntermediateHash: %s\n\tMerkleRoot: %s, MerkleProof: %s,\n\tLen of signatures: %d", bytes32ToString(poc.GossipHash), bytes32ToString(poc.IntermediateHash), bytes32ToString(poc.MerkleRoot), " merkleproofplaceholder ", len(poc.Signatures))
+	str := fmt.Sprintf("[PoC] GossipHash: %s, IntermediateHash: %s\n\tMerkleRoot: %s, MerkleProof: %s,\n\tLen of signatures: %d", bytes32ToString(poc.GossipHash), bytes32ToString(poc.IntermediateHash), bytes32ToString(poc.MerkleRoot), " merkleproofindex: ", poc.MerkleProof.Index)
 	return str
 }
 
