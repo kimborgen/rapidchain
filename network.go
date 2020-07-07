@@ -23,6 +23,11 @@ func dialAndSend(addr string, msg interface{}) {
 	conn.Close()
 }
 
+func dialAndSendToCoordinator(identifier string, _msg interface{}) {
+	msg := Msg{identifier, _msg, nil}
+	dialAndSend(coord+":8080", msg)
+}
+
 func reciveMsg(conn net.Conn, obj interface{}) {
 	dec := gob.NewDecoder(conn)
 	err := dec.Decode(obj)
