@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"flag"
 	"log"
+	"time"
 )
 
 func main() {
@@ -61,6 +62,8 @@ func main() {
 	gob.Register(ConsensusMsg{})
 	gob.Register(Transaction{})
 	gob.Register(FinalBlock{})
+	dur := time.Now().Sub(time.Now())
+	gob.Register(dur)
 
 	if flagArgs.local {
 		coord = coord_local

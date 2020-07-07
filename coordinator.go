@@ -7,6 +7,8 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -91,13 +93,25 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	// committee -> iteration -> echo, pending, accept messages
 	consensusResults := new(consensusResult)
 
+	// result files
+	files := make([]*os.File, 3)
+	files[0], err = os.Create("results/tx" + time.Now().String() + ".csv")
+	ifErrFatal(err, "txresfile")
+	files[1], err = os.Create("results/pocverify" + time.Now().String() + ".csv")
+	ifErrFatal(err, "pocverifyfile")
+	files[2], err = os.Create("results/pocadd" + time.Now().String() + ".csv")
+	ifErrFatal(err, "pocaddfile")
+	for _, f := range files {
+		defer f.Close()
+	}
+
 	// start listening for debug/stats
 	for {
 		// accept new connection
 		conn, err := listener.Accept()
 		ifErrFatal(err, "tcp accept")
 		// spawn off goroutine to able to accept new connections
-		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults, finalBlockChan)
+		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults, finalBlockChan, files)
 	}
 }
 
@@ -279,7 +293,8 @@ func coordinator(
 func coordinatorDebugStatsHandleConnection(conn net.Conn,
 	successfullGossips *map[[32]byte]int,
 	consensusResults *consensusResult,
-	finalBlockChan chan FinalBlock) {
+	finalBlockChan chan FinalBlock,
+	files []*os.File) {
 	msg := new(Msg)
 	reciveMsg(conn, msg)
 	switch msg.Typ {
@@ -298,6 +313,21 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 		block, ok := msg.Msg.(FinalBlock)
 		notOkErr(ok, "finalblock")
 		finalBlockChan <- block
+	case "pocverify":
+		dur, ok := msg.Msg.(time.Duration)
+		notOkErr(ok, "pocverify")
+		tmp := strconv.FormatInt(dur.Nanoseconds(), 10)
+		fmt.Println("pocverify: ", tmp)
+		files[1].WriteString(tmp)
+		files[1].WriteString("\n")
+		files[1].Sync()
+	case "pocadd":
+		dur, ok := msg.Msg.(time.Duration)
+		notOkErr(ok, "pocadd")
+		tmp := strconv.FormatInt(dur.Nanoseconds(), 10)
+		files[2].WriteString(tmp)
+		files[2].WriteString("\n")
+		files[2].Sync()
 	default:
 		errFatal(nil, "no known message type (coordinator)")
 	}
