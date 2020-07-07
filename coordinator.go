@@ -290,6 +290,16 @@ func coordinator(
 	txGenerator(flagArgs, nodeInfos, users, genesisBlocks, finalBlockChan)
 }
 
+func writeIntToFile(integer int64, f *os.File) {
+	tmp := strconv.FormatInt(time.Now().Unix(), 10)
+	tmp += ","
+	tmp += strconv.FormatInt(integer, 10)
+	tmp += "\n"
+
+	f.WriteString(tmp)
+	f.Sync()
+}
+
 func coordinatorDebugStatsHandleConnection(conn net.Conn,
 	successfullGossips *map[[32]byte]int,
 	consensusResults *consensusResult,
@@ -316,18 +326,11 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 	case "pocverify":
 		dur, ok := msg.Msg.(time.Duration)
 		notOkErr(ok, "pocverify")
-		tmp := strconv.FormatInt(dur.Nanoseconds(), 10)
-		fmt.Println("pocverify: ", tmp)
-		files[1].WriteString(tmp)
-		files[1].WriteString("\n")
-		files[1].Sync()
+		writeIntToFile(dur.Nanoseconds(), files[1])
 	case "pocadd":
 		dur, ok := msg.Msg.(time.Duration)
 		notOkErr(ok, "pocadd")
-		tmp := strconv.FormatInt(dur.Nanoseconds(), 10)
-		files[2].WriteString(tmp)
-		files[2].WriteString("\n")
-		files[2].Sync()
+		writeIntToFile(dur.Nanoseconds(), files[2])
 	default:
 		errFatal(nil, "no known message type (coordinator)")
 	}
