@@ -416,14 +416,26 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	}
 
 	// PoC: validate signatures:
-	// TODO Verify against reconfiguration block
 
 	if uint(len(t.ProofOfConsensus.Signatures)) < (nodeCtx.flagArgs.n/nodeCtx.flagArgs.m)/nodeCtx.flagArgs.committeeF {
 		errFatal(nil, fmt.Sprintf("Len of signatures: %d was lower than required: %d ", len(t.ProofOfConsensus.Signatures), (nodeCtx.flagArgs.n/nodeCtx.flagArgs.m)/nodeCtx.flagArgs.committeeF))
 	}
+	rBlock := nodeCtx.blockchain._getLastReconfigurationBlock()
 	for _, cMsg := range t.ProofOfConsensus.Signatures {
+		// verify signature
+
 		ok := cMsg.Pub.verify(cMsg.calculateHash(), cMsg.Sig)
 		notOkErr(ok, "signature verify")
+
+		// verify that pub exists in that committee
+		// the id of the committee that sent cross-tx-response is the same as the committee that the input belongs to
+		comitteeID := txFindClosestCommittee(nodeCtx, t.Inputs[0].TxHash)
+		if comitteeID == nodeCtx.self.CommitteeID {
+			errFatal(nil, "committee of cross-tx-response was this committee?")
+		}
+		if _, ok := rBlock.Committees[comitteeID].Members[cMsg.Pub.Bytes]; !ok {
+			errFatal(nil, "signature pub did not exist in that committee")
+		}
 	}
 
 	// add output to temp
