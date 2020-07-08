@@ -251,13 +251,21 @@ func buildCurrentNeighbours(nodeCtx *NodeCtx) {
 	// since self have inserted himself then the next neighbor to self is the index, but in the original members array
 	// therefor begin constructing at that index
 	taken := make(map[int]bool)
+	// log.Println("before neighbors create")
+	var ii uint = 0
 	for i := uint(0); i < nodeCtx.flagArgs.d; i++ {
-		dist := (int(math.Pow(2, float64(i))) - 1 + selfIndex) % len(members)
+		dist := int(math.Abs(float64(int(math.Pow(2, float64(ii))-1.0+float64(selfIndex)) % len(members))))
+
 		if !taken[dist] {
+			// fmt.Printf("i: %d, ii %d, dist %d, selfindex %d, len members %d, exponent %d\n", i, ii, dist, selfIndex, len(members), dist)
 			currentNeighbours[i] = members[dist]
 			taken[dist] = true
+		} else {
+			i--
 		}
+		ii++
 	}
+	// log.Println("after neighbors create")
 
 	fmt.Println("\n\nCommittee", bytes32ToString(nodeCtx.self.CommitteeID))
 	fmt.Println("Self id ", bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
