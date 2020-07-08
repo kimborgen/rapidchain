@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/kimborgen/go-merkletree"
 )
@@ -43,6 +44,11 @@ type ResponseToNodes struct {
 	GensisisBlocks       []*FinalBlock
 	DebugNode            [32]byte
 	ReconfigurationBlock *ReconfigurationBlock
+}
+
+type ByteArrayAndTimestamp struct {
+	B []byte
+	T time.Time
 }
 
 // Representation of a member beloning to the current committee of a node

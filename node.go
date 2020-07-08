@@ -158,16 +158,32 @@ func nodeHandleConnection(
 			errFatal(nil, "Got a find_node msg but I am the target committee")
 		}
 
+		b := new(ByteArrayAndTimestamp)
+		b.B = byteSliceAppend(kMsg.ID[:], nodeCtx.self.CommitteeID[:])
+		b.T = time.Now()
+
+		go dialAndSendToCoordinator("find_node", b)
+
 		handleFindNode(nodeCtx, conn, kMsg)
 	case "transaction":
 		// recived a transaction
 		tMsg, ok := msg.Msg.(Transaction)
 		notOkErr(ok, "transaction decoding") //todo dont need such strict err
 		// figure out which committee the transaction belongs to
+		if tMsg.Hash == [32]byte{} {
+			errFatal(nil, fmt.Sprintf("tMsg.Hash was empty with t:", tMsg))
+		}
 		cID := txFindClosestCommittee(nodeCtx, tMsg.Hash)
 
 		// if current committe then initiate IDA-Gossip
 		if cID == nodeCtx.self.CommitteeID {
+			// send log to coordinator that tx has been recived at target destination
+			b := new(ByteArrayAndTimestamp)
+			btmp := tMsg.id()
+			b.B = btmp[:]
+			b.T = time.Now()
+			go dialAndSendToCoordinator("transaction_recieved", b)
+
 			// ida gossip the tx so the rest of the committee gets the tx
 			IDAGossip(nodeCtx, tMsg.encode(), "tx")
 
@@ -178,7 +194,18 @@ func nodeHandleConnection(
 			//}
 		} else {
 			// log.Println("Tx not target committe, routing", tMsg.Hash)
+
+			// indicate to coordinator that we are starting a routing
+
+			b := new(ByteArrayAndTimestamp)
+			btmp := tMsg.id()
+			b.B = btmp[:]
+			b.T = time.Now()
+
+			go dialAndSendToCoordinator("routetx", b)
+
 			go routeTx(nodeCtx, msg, cID)
+
 		}
 	case "crosstransaction":
 		// recived a transaction

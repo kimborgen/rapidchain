@@ -29,6 +29,47 @@ type consensusResult struct {
 	echos, pending, accepts int
 }
 
+// measure routing of tx
+type routetxresults struct {
+	start      time.Time              // first node recives transaction
+	end        time.Time              // first node in target committee recives tx
+	committees map[[32]byte]time.Time // first node in intermediary committee recives tx
+	// mux        sync.Mutex
+}
+
+func (r *routetxresults) init() {
+	r.committees = make(map[[32]byte]time.Time)
+}
+
+// adds a committee with timestamp if it does not allready exist
+func (r *routetxresults) add(cId [32]byte, tim time.Time) bool {
+	if r.committees == nil {
+		r.init()
+	} else if _, ok := r.committees[cId]; ok {
+		return false
+	}
+	r.committees[cId] = tim
+	return true
+}
+
+// adds start timestamp only if it has not been added before
+func (r *routetxresults) addStart(tim time.Time) bool {
+	if r.start.IsZero() {
+		r.start = tim
+		return true
+	}
+	return false
+}
+
+// adds end timestamp only if it has not been added before
+func (r *routetxresults) addEnd(tim time.Time) bool {
+	if r.end.IsZero() {
+		r.end = tim
+		return true
+	}
+	return false
+}
+
 func launchCoordinator(flagArgs *FlagArgs) {
 	/*
 		The coordinator should listen to incoming connections untill it has recived n different ids
@@ -64,13 +105,15 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	var err error
 
 	// result files
-	files := make([]*os.File, 3)
+	files := make([]*os.File, 4)
 	files[0], err = os.Create("results/tx" + time.Now().String() + ".csv")
 	ifErrFatal(err, "txresfile")
 	files[1], err = os.Create("results/pocverify" + time.Now().String() + ".csv")
 	ifErrFatal(err, "pocverifyfile")
 	files[2], err = os.Create("results/pocadd" + time.Now().String() + ".csv")
 	ifErrFatal(err, "pocaddfile")
+	files[3], err = os.Create("results/routing" + time.Now().String() + ".csv")
+	ifErrFatal(err, "routing")
 	for _, f := range files {
 		defer f.Close()
 	}
@@ -107,13 +150,17 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	// committee -> iteration -> echo, pending, accept messages
 	consensusResults := new(consensusResult)
 
+	// routetx map
+	// txid -> committeeid ->
+	routetxmap := make(map[[32]byte]*routetxresults)
+
 	// start listening for debug/stats
 	for {
 		// accept new connection
 		conn, err := listener.Accept()
 		ifErrFatal(err, "tcp accept")
 		// spawn off goroutine to able to accept new connections
-		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults, finalBlockChan, files)
+		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults, finalBlockChan, files, routetxmap)
 	}
 }
 
@@ -309,11 +356,20 @@ func writeIntToFile(integer int64, f *os.File) {
 	f.Sync()
 }
 
+func writeStringToFile(s string, f *os.File) {
+
+	newS := prepareResultString(s)
+
+	f.WriteString(newS)
+	f.Sync()
+}
+
 func coordinatorDebugStatsHandleConnection(conn net.Conn,
 	successfullGossips *map[[32]byte]int,
 	consensusResults *consensusResult,
 	finalBlockChan chan FinalBlock,
-	files []*os.File) {
+	files []*os.File,
+	rMap map[[32]byte]*routetxresults) {
 	msg := new(Msg)
 	reciveMsg(conn, msg)
 	switch msg.Typ {
@@ -340,6 +396,53 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 		dur, ok := msg.Msg.(time.Duration)
 		notOkErr(ok, "pocadd")
 		writeIntToFile(dur.Nanoseconds(), files[2])
+	case "routetx":
+		tx, ok := msg.Msg.(ByteArrayAndTimestamp)
+		notOkErr(ok, "routtx")
+		ID := toByte32(tx.B)
+		if rMap[ID] == nil {
+			rMap[ID] = new(routetxresults)
+			rMap[ID].init()
+		}
+		rMap[ID].addStart(tx.T)
+	case "find_node":
+		tuple, ok := msg.Msg.(ByteArrayAndTimestamp)
+		notOkErr(ok, "find_node")
+		txid := toByte32(tuple.B[:32])
+		committeeID := toByte32(tuple.B[32:])
+		if rMap[txid] == nil {
+			rMap[txid] = new(routetxresults)
+			rMap[txid].init()
+		}
+		rMap[txid].add(committeeID, tuple.T)
+	case "transaction_recieved":
+		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
+		notOkErr(ok, "find_node")
+		ID := toByte32(bat.B)
+		if rMap[ID] == nil {
+			rMap[ID] = new(routetxresults)
+			rMap[ID].init()
+		}
+		ok = rMap[ID].addEnd(bat.T)
+		if ok {
+			// sleep for a delta to let incomming request be processed
+			time.Sleep(default_delta * 3 * time.Millisecond)
+			var s string
+			if rMap[ID].start.IsZero() {
+				s += "0"
+			} else {
+				s += strconv.FormatInt(rMap[ID].start.Unix(), 10)
+			}
+			s += ","
+			s += strconv.FormatInt(rMap[ID].end.Unix(), 10)
+			for cID, tStamp := range rMap[ID].committees {
+				s += ","
+				s += bytes32ToString(cID)
+				s += ","
+				s += strconv.FormatInt(tStamp.Unix(), 10)
+			}
+			writeStringToFile(s, files[3])
+		}
 	default:
 		errFatal(nil, "no known message type (coordinator)")
 	}
