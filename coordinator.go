@@ -34,15 +34,21 @@ type routetxresults struct {
 	start      time.Time              // first node recives transaction
 	end        time.Time              // first node in target committee recives tx
 	committees map[[32]byte]time.Time // first node in intermediary committee recives tx
-	// mux        sync.Mutex
+	mux        sync.Mutex
 }
 
 func (r *routetxresults) init() {
-	r.committees = make(map[[32]byte]time.Time)
+	r.mux.Lock()
+	defer r.mux.Unlock()
+	if r.committees == nil {
+		r.committees = make(map[[32]byte]time.Time)
+	}
 }
 
 // adds a committee with timestamp if it does not allready exist
 func (r *routetxresults) add(cId [32]byte, tim time.Time) bool {
+	r.mux.Lock()
+	defer r.mux.Unlock()
 	if r.committees == nil {
 		r.init()
 	} else if _, ok := r.committees[cId]; ok {
@@ -54,6 +60,8 @@ func (r *routetxresults) add(cId [32]byte, tim time.Time) bool {
 
 // adds start timestamp only if it has not been added before
 func (r *routetxresults) addStart(tim time.Time) bool {
+	r.mux.Lock()
+	defer r.mux.Unlock()
 	if r.start.IsZero() {
 		r.start = tim
 		return true
@@ -63,11 +71,33 @@ func (r *routetxresults) addStart(tim time.Time) bool {
 
 // adds end timestamp only if it has not been added before
 func (r *routetxresults) addEnd(tim time.Time) bool {
+	r.mux.Lock()
+	defer r.mux.Unlock()
 	if r.end.IsZero() {
 		r.end = tim
 		return true
 	}
 	return false
+}
+
+type routetxmap struct {
+	m   map[[32]byte]*routetxresults
+	mux sync.Mutex
+}
+
+func (r *routetxmap) add(ID [32]byte) {
+	r.mux.Lock()
+	defer r.mux.Unlock()
+	if r.m[ID] != nil {
+		return
+	}
+	r.m[ID] = new(routetxresults)
+}
+
+func (r *routetxmap) get(ID [32]byte) *routetxresults {
+	r.mux.Lock()
+	defer r.mux.Unlock()
+	return r.m[ID]
 }
 
 type IDAGossipResultsMap struct {
@@ -195,7 +225,8 @@ func launchCoordinator(flagArgs *FlagArgs) {
 
 	// routetx map
 	// txid -> committeeid ->
-	routetxmap := make(map[[32]byte]*routetxresults)
+	routetxmap := new(routetxmap)
+	routetxmap.m = make(map[[32]byte]*routetxresults)
 
 	idaresults := new(IDAGossipResultsMap)
 	idaresults.m = make(map[[32]byte]*IDAGossipResults)
@@ -415,7 +446,7 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 	consensusResults *consensusResult,
 	finalBlockChan chan FinalBlock,
 	files []*os.File,
-	rMap map[[32]byte]*routetxresults,
+	rMap *routetxmap,
 	idaresults *IDAGossipResultsMap) {
 	msg := new(Msg)
 	reciveMsg(conn, msg)
@@ -447,42 +478,36 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 		tx, ok := msg.Msg.(ByteArrayAndTimestamp)
 		notOkErr(ok, "routtx")
 		ID := toByte32(tx.B)
-		if rMap[ID] == nil {
-			rMap[ID] = new(routetxresults)
-			rMap[ID].init()
-		}
-		rMap[ID].addStart(tx.T)
+		rMap.add(ID)
+		r := rMap.get(ID)
+		r.addStart(tx.T)
 	case "find_node":
 		tuple, ok := msg.Msg.(ByteArrayAndTimestamp)
 		notOkErr(ok, "find_node")
 		txid := toByte32(tuple.B[:32])
 		committeeID := toByte32(tuple.B[32:])
-		if rMap[txid] == nil {
-			rMap[txid] = new(routetxresults)
-			rMap[txid].init()
-		}
-		rMap[txid].add(committeeID, tuple.T)
+		// rMap.add(txid)
+		r := rMap.get(txid)
+		r.add(committeeID, tuple.T)
 	case "transaction_recieved":
 		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
 		notOkErr(ok, "find_node")
 		ID := toByte32(bat.B)
-		if rMap[ID] == nil {
-			rMap[ID] = new(routetxresults)
-			rMap[ID].init()
-		}
-		ok = rMap[ID].addEnd(bat.T)
+		rMap.add(ID)
+		r := rMap.get(ID)
+		ok = r.addEnd(bat.T)
 		if ok {
 			// sleep for a delta to let incomming request be processed
 			time.Sleep(default_delta * 3 * time.Millisecond)
 			var s string
-			if rMap[ID].start.IsZero() {
+			if r.start.IsZero() {
 				s += "0"
 			} else {
-				s += strconv.FormatInt(rMap[ID].start.Unix(), 10)
+				s += strconv.FormatInt(r.start.Unix(), 10)
 			}
 			s += ","
-			s += strconv.FormatInt(rMap[ID].end.Unix(), 10)
-			for cID, tStamp := range rMap[ID].committees {
+			s += strconv.FormatInt(r.end.Unix(), 10)
+			for cID, tStamp := range r.committees {
 				s += ","
 				s += bytes32ToString(cID)
 				s += ","
