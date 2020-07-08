@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"time"
 
 	"github.com/kimborgen/go-merkletree"
 	"github.com/klauspost/reedsolomon"
@@ -22,6 +23,13 @@ func IDAGossip(nodeCtx *NodeCtx, msg []byte, typ string) [32]byte {
 	// Since msg is of unknown size, it cannot always be divided into equal kappa data shards.
 	// Therefor we add a last datashard to contain the rest of the msg.
 	// if msg can be evenly divded, then the last data shard is simply zero bytes
+
+	// log to coordinator that we are initiating ida gossip process
+	bat := new(ByteArrayAndTimestamp)
+	battmp := hash(msg)
+	bat.B = battmp[:]
+	bat.T = time.Now()
+	go dialAndSendToCoordinator("start_ida_gossip", bat)
 
 	// initate some static variables
 	// TODO: dynamicly create these

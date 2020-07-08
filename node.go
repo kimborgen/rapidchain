@@ -68,12 +68,19 @@ func nodeHandleConnection(
 		reconstructed := handleIDAGossipMsg(idaMsg, nodeCtx)
 		if reconstructed {
 
+			// log to coordinator
+			bat := new(ByteArrayAndTimestamp)
+			data := nodeCtx.reconstructedIdaMsgs.getData(idaMsg.MerkleRoot)
+			id := hash(data)
+			bat.B = id[:]
+			bat.T = time.Now()
+			go dialAndSendToCoordinator("reconstructed_ida_gossip", bat)
+
 			switch idaMsg.Typ {
 			case "tx":
 				// reconstruct tx
-				txData := nodeCtx.reconstructedIdaMsgs.getData(idaMsg.MerkleRoot)
 				tx := new(Transaction)
-				tx.decode(txData)
+				tx.decode(data)
 
 				// add tx to pool
 				nodeCtx.txPool.add(tx)
@@ -81,9 +88,8 @@ func nodeHandleConnection(
 			case "block":
 				// ProposedBlock
 				nodeCtx.blockchain.mux.Lock()
-				blockByte := nodeCtx.reconstructedIdaMsgs.getData(idaMsg.MerkleRoot)
 				block := new(ProposedBlock)
-				block.decode(blockByte)
+				block.decode(data)
 
 				// TODO verify block
 				nodeCtx.blockchain._addProposedBlock(block)

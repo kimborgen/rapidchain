@@ -70,6 +70,47 @@ func (r *routetxresults) addEnd(tim time.Time) bool {
 	return false
 }
 
+type IDAGossipResultsMap struct {
+	m   map[[32]byte]*IDAGossipResults
+	mux sync.Mutex
+}
+
+func (ida *IDAGossipResultsMap) add(ID [32]byte) {
+	ida.mux.Lock()
+	defer ida.mux.Unlock()
+	if ida.m[ID] != nil {
+		return
+	}
+	ida.m[ID] = new(IDAGossipResults)
+
+}
+
+func (ida *IDAGossipResultsMap) get(ID [32]byte) *IDAGossipResults {
+	ida.mux.Lock()
+	defer ida.mux.Unlock()
+	return ida.m[ID]
+}
+
+// measure routing of tx
+type IDAGossipResults struct {
+	start         time.Time   // first node recives transaction
+	reconstructed []time.Time // first node in target committee recives tx
+	mux           sync.Mutex
+}
+
+// adds the timestamp of the reconstructed msg, return true if it is the first msg
+func (ida *IDAGossipResults) addReconstructed(tim time.Time) bool {
+	ida.mux.Lock()
+	defer ida.mux.Unlock()
+	if len(ida.reconstructed) == 0 {
+		ida.reconstructed = make([]time.Time, 1)
+		ida.reconstructed[0] = tim
+		return true
+	}
+	ida.reconstructed = append(ida.reconstructed, tim)
+	return false
+}
+
 func launchCoordinator(flagArgs *FlagArgs) {
 	/*
 		The coordinator should listen to incoming connections untill it has recived n different ids
@@ -105,7 +146,7 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	var err error
 
 	// result files
-	files := make([]*os.File, 4)
+	files := make([]*os.File, 5)
 	files[0], err = os.Create("results/tx" + time.Now().String() + ".csv")
 	ifErrFatal(err, "txresfile")
 	files[1], err = os.Create("results/pocverify" + time.Now().String() + ".csv")
@@ -113,6 +154,8 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	files[2], err = os.Create("results/pocadd" + time.Now().String() + ".csv")
 	ifErrFatal(err, "pocaddfile")
 	files[3], err = os.Create("results/routing" + time.Now().String() + ".csv")
+	ifErrFatal(err, "routing")
+	files[4], err = os.Create("results/ida" + time.Now().String() + ".csv")
 	ifErrFatal(err, "routing")
 	for _, f := range files {
 		defer f.Close()
@@ -154,13 +197,16 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	// txid -> committeeid ->
 	routetxmap := make(map[[32]byte]*routetxresults)
 
+	idaresults := new(IDAGossipResultsMap)
+	idaresults.m = make(map[[32]byte]*IDAGossipResults)
+
 	// start listening for debug/stats
 	for {
 		// accept new connection
 		conn, err := listener.Accept()
 		ifErrFatal(err, "tcp accept")
 		// spawn off goroutine to able to accept new connections
-		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults, finalBlockChan, files, routetxmap)
+		go coordinatorDebugStatsHandleConnection(conn, &successfullGossips, consensusResults, finalBlockChan, files, routetxmap, idaresults)
 	}
 }
 
@@ -369,7 +415,8 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 	consensusResults *consensusResult,
 	finalBlockChan chan FinalBlock,
 	files []*os.File,
-	rMap map[[32]byte]*routetxresults) {
+	rMap map[[32]byte]*routetxresults,
+	idaresults *IDAGossipResultsMap) {
 	msg := new(Msg)
 	reciveMsg(conn, msg)
 	switch msg.Typ {
@@ -442,6 +489,35 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 				s += strconv.FormatInt(tStamp.Unix(), 10)
 			}
 			writeStringToFile(s, files[3])
+		}
+	case "start_ida_gossip":
+		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
+		notOkErr(ok, "find_node")
+		ID := toByte32(bat.B)
+		idaresults.add(ID)
+		ida := idaresults.get(ID)
+		ida.start = bat.T
+	case "reconstructed_ida_gossip":
+		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
+		notOkErr(ok, "find_node")
+		ID := toByte32(bat.B)
+		idaresults.add(ID)
+		ida := idaresults.get(ID)
+
+		ok = ida.addReconstructed(bat.T)
+
+		if ok {
+			time.Sleep(default_delta * time.Millisecond * 3)
+			var s string
+			ida.mux.Lock()
+
+			s += strconv.FormatInt(ida.start.Unix(), 10)
+			for _, tStamp := range ida.reconstructed {
+				s += ","
+				s += strconv.FormatInt(tStamp.Unix(), 10)
+			}
+			ida.mux.Unlock()
+			writeStringToFile(s, files[4])
 		}
 	default:
 		errFatal(nil, "no known message type (coordinator)")
