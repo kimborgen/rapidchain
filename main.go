@@ -20,7 +20,7 @@ func main() {
 	mPtr := flag.Uint("m", default_m, "Number of committees")
 	totalFPtr := flag.Uint("totalF", default_totalF, "Total adversary tolerance in the form of the divisor (1/x)")
 	committeeFPtr := flag.Uint("committeeF", default_committeeF, "Committee adversary tolerance in the form of the divisor (1/x)")
-	dPtr := flag.Uint("d", default_d, "d neighbours")
+	// dPtr := flag.Uint("d", default_d, "d neighbours")
 	BPtr := flag.Uint("B", default_B, "block size in bytes")
 	nUsersPtr := flag.Uint("nUsers", default_nUsers, "users in system")
 	totalCointsPtr := flag.Uint("totalCoins", default_totalCoins, "total coins in system")
@@ -38,7 +38,7 @@ func main() {
 	flagArgs.m = *mPtr
 	flagArgs.totalF = *totalFPtr
 	flagArgs.committeeF = *committeeFPtr
-	flagArgs.d = *dPtr
+	// flagArgs.d = *dPtr
 	flagArgs.B = *BPtr
 	flagArgs.nUsers = *nUsersPtr
 	flagArgs.totalCoins = *totalCointsPtr
@@ -78,13 +78,10 @@ func main() {
 		errFatal(nil, "Default kappa was over 256/1byte")
 	}
 
-	if flagArgs.d > flagArgs.n/flagArgs.m {
-		errFatal(nil, "more neighbours than members in committee")
-	}
-
 	// runtime.GOMAXPROCS(int(flagArgs.vCPUs))
 
 	if *functionPtr == "coordinator" {
+		log.Println("Launching coordinator")
 		launchCoordinator(&flagArgs)
 	} else {
 		launchNodes(&flagArgs)
@@ -93,6 +90,7 @@ func main() {
 }
 
 func launchNodes(flagArgs *FlagArgs) {
+	log.Println("Launcing ", flagArgs.instances, " instances")
 	for i := uint(0); i < flagArgs.instances; i++ {
 		go launchNode(flagArgs)
 	}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"math/big"
 	"net"
@@ -17,12 +16,14 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 
 	msg := Node_InitialMessageToCoordinator{privKey.Pub, portNumber}
 
+	// fmt.Println("sending msg to coord")
 	sendMsg(conn, msg)
 
 	// fmt.Printf("%d Waiting for return message\n", ID)
 
 	response := new(ResponseToNodes)
 	reciveMsg(conn, response)
+	// fmt.Println("recv msg to coord")
 
 	// declare variables to return
 	allInfo := make(map[[32]byte]NodeAllInfo)
@@ -225,7 +226,6 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 // Each neighbour is of distance 2^i from your id where distance is just index in the sorted members array.
 // this guarantess connectivity, whereas the original random graph where probabilistic (and failed on small sizes)
 func buildCurrentNeighbours(nodeCtx *NodeCtx) {
-	currentNeighbours := make([][32]byte, nodeCtx.flagArgs.d)
 
 	// selfID := toBigInt(nodeCtx.self.Priv.Pub.Bytes)
 	members := nodeCtx.committee.getMemberIDsAsSortedList()
@@ -248,30 +248,30 @@ func buildCurrentNeighbours(nodeCtx *NodeCtx) {
 		}
 	}
 
+	// calculate length of neighbor set. Log_2(committee members + self)
+	newD := math.Log2(float64(len(nodeCtx.committee.Members) + 1))
+
+	newDint := uint(newD)
+	currentNeighbours := make([][32]byte, newDint)
+	// fmt.Println("New D ", newD, newDint)
+
 	// since self have inserted himself then the next neighbor to self is the index, but in the original members array
 	// therefor begin constructing at that index
-	taken := make(map[int]bool)
-	// log.Println("before neighbors create")
-	var ii uint = 0
-	for i := uint(0); i < nodeCtx.flagArgs.d; i++ {
-		dist := int(math.Abs(float64(int(math.Pow(2, float64(ii))-1.0+float64(selfIndex)) % len(members))))
 
-		if !taken[dist] {
-			// fmt.Printf("i: %d, ii %d, dist %d, selfindex %d, len members %d, exponent %d\n", i, ii, dist, selfIndex, len(members), dist)
-			currentNeighbours[i] = members[dist]
-			taken[dist] = true
-		} else {
-			i--
-		}
-		ii++
+	// log.Println("before neighbors create")
+
+	for i := uint(0); i < newDint; i++ {
+		dist := int(math.Abs(float64(int(math.Pow(2, float64(i))-1.0+float64(selfIndex))))) % len(members)
+		// fmt.Printf("i: %d, ii %d, dist %d, selfindex %d, len members %d, exponent %d\n", i, ii, dist, selfIndex, len(members), dist)
+		currentNeighbours[i] = members[dist]
 	}
 	// log.Println("after neighbors create")
 
-	fmt.Println("\n\nCommittee", bytes32ToString(nodeCtx.self.CommitteeID))
-	fmt.Println("Self id ", bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
-	for i, m := range currentNeighbours {
-		fmt.Printf("Neigh %d id %s\n", i, bytes32ToString(m))
-	}
+	// fmt.Println("\n\nCommittee", bytes32ToString(nodeCtx.self.CommitteeID))
+	// fmt.Println("Self id ", bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
+	// for i, m := range currentNeighbours {
+	// 	fmt.Printf("Neigh %d id %s\n", i, bytes32ToString(m))
+	// }
 
 	// if leaderElection(nodeCtx).Bytes == nodeCtx.self.Priv.Pub.Bytes {
 	// 	// members

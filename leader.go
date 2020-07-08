@@ -57,10 +57,10 @@ func leaderElection(nodeCtx *NodeCtx) {
 	listOfHashes := make([]byte32sortHelper, len(nodeCtx.committee.Members))
 	// calculate hash(id | rnd | currI) for every member
 	ii := 0
-	for k := range nodeCtx.committee.Members {
-		connoctated := byteSliceAppend(k[:], rnd[:], currI)
+	for _, m := range nodeCtx.committee.Members {
+		connoctated := byteSliceAppend(m.Pub.Bytes[:], rnd[:], currI)
 		hsh := hash(connoctated)
-		listOfHashes[ii] = byte32sortHelper{k, hsh}
+		listOfHashes[ii] = byte32sortHelper{m.Pub.Bytes, hsh}
 		ii++
 	}
 
@@ -69,8 +69,13 @@ func leaderElection(nodeCtx *NodeCtx) {
 
 	// calculate hash of self
 	selfHash := hash(byteSliceAppend(nodeCtx.self.Priv.Pub.Bytes[:], rnd[:], currI))
+	fmt.Println("self: ", bytes32ToString(selfHash), bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
+	for i, lof := range listOfHashes {
+		fmt.Println(i, bytes32ToString(lof.toSort), bytes32ToString(lof.original))
+	}
 
 	// the leader is the lowest in list except if selfHash is lower than that.
+	fmt.Println(byte32Operations(selfHash, "<", listOfHashes[0].toSort))
 	if byte32Operations(selfHash, "<", listOfHashes[0].toSort) {
 		nodeCtx.committee.CurrentLeader = nodeCtx.self.Priv.Pub
 		log.Println("I am leader!", nodeCtx.amILeader())
