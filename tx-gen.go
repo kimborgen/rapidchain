@@ -142,7 +142,11 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	transactionTracker := make(map[[32]byte]*Tracker)
 
 	i := 0
-	time.Sleep(time.Duration(default_vCPUs) * time.Second)
+	if flagArgs.local {
+		time.Sleep(10 * time.Second)
+	} else {
+		time.Sleep(time.Duration(default_vCPUs) * time.Second)
+	}
 	log.Println("starting tx-gen")
 	rand.Seed(42)
 	for {

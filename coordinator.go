@@ -489,7 +489,7 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 		notOkErr(ok, "find_node")
 		txid := toByte32(tuple.B[:32])
 		committeeID := toByte32(tuple.B[32:])
-		// rMap.add(txid)
+		rMap.add(txid)
 		r := rMap.get(txid)
 		r.add(committeeID, tuple.T)
 	case "transaction_recieved":

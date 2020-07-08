@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"log"
 	"math"
 	"math/big"
 	"net"
@@ -62,14 +64,16 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 	}
 
 	// create routing table,
-	length := math.Ceil(math.Log(float64(nodeCtx.flagArgs.m))) + 1
+	// length := math.Ceil(math.Log(float64(nodeCtx.flagArgs.m))) + 1
+	length := math.Log2(float64(nodeCtx.flagArgs.m)) + 1
 
 	// check if m is power of two:
 	if (nodeCtx.flagArgs.m & (nodeCtx.flagArgs.m - 1)) != 0 {
-		// if it, increase length by one to get the last committee in routing table
+		// if it isnt, increase length by one to get the last committee in routing table
 		length++
+		fmt.Println("increased length by one")
 	}
-	//log.Println("Routingtable length: ", length, int(length))
+	log.Println("Routingtable length: ", length, int(length))
 
 	routingTable.init(int(length))
 
