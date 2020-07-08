@@ -53,14 +53,14 @@ func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *
 			tmp := hash(tmpp)
 
 			if committeeInfos[i].id == txFindClosestCommittee(ctx, tmp) {
-				fmt.Println("Closets committee ", bytes32ToString(txFindClosestCommittee(ctx, tmp)), bytes32ToString(committeeInfos[i].id))
+				// fmt.Println("Closets committee ", bytes32ToString(txFindClosestCommittee(ctx, tmp)), bytes32ToString(committeeInfos[i].id))
 				txHash = tmp
 				break
 			}
 		}
 		genesisTx.Hash = txHash
 
-		fmt.Println(genesisTx)
+		// fmt.Println(genesisTx)
 
 		// genesisTx.setHash()
 		genesisBlock := new(ProposedBlock)
@@ -75,7 +75,7 @@ func genGenesisBlock(flagArgs *FlagArgs, committeeInfos []committeeInfo, users *
 		genesisFinalBlock.ProposedBlock = genesisBlock
 		finalBlocks[i] = genesisFinalBlock
 
-		fmt.Println(i, genesisFinalBlock)
+		// fmt.Println(i, genesisFinalBlock)
 	}
 	//fmt.Println("Block: ", genesisBlock)
 	// fmt.Println(finalBlocks)
@@ -142,14 +142,15 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	transactionTracker := make(map[[32]byte]*Tracker)
 
 	i := 0
-	time.Sleep(3 * time.Second)
+	time.Sleep(time.Duration(default_vCPUs) * time.Second)
+	log.Println("starting tx-gen")
 	rand.Seed(42)
 	for {
 		before := time.Now()
 
 		l := len(finalBlockChan)
 		for i := 0; i < l; i++ {
-			fmt.Println("Recived finalblock")
+			// fmt.Println("Recived finalblock")
 			finalBlock := <-finalBlockChan
 			fmt.Println(finalBlock.ProposedBlock)
 			for _, t := range finalBlock.ProposedBlock.Transactions {

@@ -137,6 +137,9 @@ func IDAGossip(nodeCtx *NodeCtx, msg []byte, typ string) [32]byte {
 
 	// send each msg to node
 	for i, msgToNode := range msgs {
+		// fmt.Println("neig", nodeCtx.committee.Members[nodeCtx.neighbors[i]])
+		// fmt.Println("neigg", nodeCtx.neighbors)
+		// fmt.Println("neiggg", nodeCtx.neighbors[i])
 		var addr string = nodeCtx.committee.Members[nodeCtx.neighbors[i]].IP
 		dialAndSend(addr, msgToNode)
 	}
@@ -265,6 +268,9 @@ func gossipSend(msg IDAGossipMsg, nodeCtx *NodeCtx) {
 
 	// send each msg to node
 	for i, msg := range msgs {
+		// fmt.Println("neig", nodeCtx.committee.Members[nodeCtx.neighbors[i]])
+		// fmt.Println("neigg", nodeCtx.neighbors)
+		// fmt.Println("neiggg", nodeCtx.neighbors[i])
 		var addr string = nodeCtx.committee.Members[nodeCtx.neighbors[i]].IP
 		//log.Printf("addr: %s\n", addr)
 		go dialAndSend(addr, msg)

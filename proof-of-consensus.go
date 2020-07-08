@@ -57,8 +57,8 @@ func addProofOfConsensus(nodeCtx *NodeCtx, t *Transaction, finalBlock *FinalBloc
 	proof, err := tree.GenerateProofUsingIndex(uint64(indexOfT), 0)
 	ifErrFatal(err, "generating proof for tx in addProofOfConsensus")
 
-	fmt.Println("root: ", bytes32ToString(root32))
-	fmt.Println("proof: ", proof)
+	// fmt.Println("root: ", bytes32ToString(root32))
+	// fmt.Println("proof: ", proof)
 
 	t.ProofOfConsensus.MerkleRoot = root32
 	t.ProofOfConsensus.MerkleProof = proof
@@ -66,5 +66,5 @@ func addProofOfConsensus(nodeCtx *NodeCtx, t *Transaction, finalBlock *FinalBloc
 	dur := time.Now().Sub(before)
 	go dialAndSendToCoordinator("pocadd", dur)
 
-	fmt.Println("new tx PoC : ", t)
+	// fmt.Println("new tx PoC : ", t)
 }

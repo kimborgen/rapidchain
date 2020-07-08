@@ -394,16 +394,16 @@ func (s *UTXOSet) removeOutput(k [32]byte, N uint) {
 
 func (s *UTXOSet) _get(k [32]byte, N uint) *OutTx {
 	if len(s.set[k]) == 0 {
-		fmt.Println("no key")
+		// fmt.Println("no key")
 		return nil
 	}
 	v, ok := s.set[k][N]
 	if !ok {
-		fmt.Println("no out")
+		// fmt.Println("no out")
 		return nil
 	}
 	if N != v.N {
-		fmt.Println("Pubkey ", bytesToString(v.PubKey.Bytes[:]))
+		// fmt.Println("Pubkey ", bytesToString(v.PubKey.Bytes[:]))
 		errFatal(nil, fmt.Sprintf("map nonce %d not equal to tx nonce %d", N, v.N))
 	}
 	return v
@@ -738,9 +738,9 @@ func (b *ProposedBlock) isHashesCorrect() bool {
 
 	h := b.calculateHash()
 
-	fmt.Println(together, "\n", h, "\n")
+	// fmt.Println(together, "\n", h, "\n")
 
-	fmt.Println(bytesToString(together[:]), "\n", bytesToString(h[:]))
+	// fmt.Println(bytesToString(together[:]), "\n", bytesToString(h[:]))
 	if bytesToString(together[:]) == bytesToString(h[:]) {
 		return true
 	}
@@ -778,12 +778,12 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 	// assume that signatures and so on are valid because the block has gone trough consensus
 	// lock utxoSet because we are going to do a lot of changes that must be atomic with the respect to the block
 	nodeCtx.utxoSet.mux.Lock()
-	fmt.Println("Processing block")
+	// fmt.Println("Processing block")
 	// we do not want to proccess new cross-tx'es, or original tx'es (UTXO's in original TX are still spendable)
 	for _, t := range b.ProposedBlock.Transactions {
 		what := t.whatAmI(nodeCtx)
-		fmt.Println("processBlock: ", what)
-		fmt.Println(t)
+		// fmt.Println("processBlock: ", what)
+		// fmt.Println(t)
 		if what == "normal" {
 			var tot uint = 0
 			var totOut uint = 0
@@ -884,7 +884,7 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 	nodeCtx.txPool.processBlock(b.ProposedBlock.Transactions)
 
 	// print utxo set
-	fmt.Println(nodeCtx.utxoSet)
+	// fmt.Println(nodeCtx.utxoSet)
 
 	nodeCtx.utxoSet.mux.Unlock()
 }

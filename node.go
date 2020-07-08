@@ -21,8 +21,9 @@ func launchNode(flagArgs *FlagArgs) {
 
 	nodeCtx := new(NodeCtx)
 	nodeCtx.flagArgs = *flagArgs
+	// fmt.Println("Before coord")
 	coordinatorSetup(conn, portNumber, nodeCtx)
-
+	// fmt.Println("After coord")
 	// launch listener
 	go listen(listener, nodeCtx)
 	// if nodeCtx.self.Debug {
@@ -32,8 +33,8 @@ func launchNode(flagArgs *FlagArgs) {
 	startNewIteration(nodeCtx)
 
 	// blocker
-	for {
-	}
+	// for {
+	// }
 }
 
 func listen(
@@ -128,7 +129,7 @@ func nodeHandleConnection(
 					break
 				}
 				timeout++
-				fmt.Printf("waiting for proposed block %d\n", timeout)
+				// fmt.Printf("waiting for proposed block %d\n", timeout)
 				if timeout > 10 {
 					break
 				}

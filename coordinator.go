@@ -361,6 +361,9 @@ func coordinator(
 	}
 
 	fmt.Println("Committee info: ", committeeInfos)
+	for _, ci := range committeeInfos {
+		fmt.Println("Committee ", bytes32ToString(ci.id), ci.npm, ci.f)
+	}
 
 	// check that invariants are held
 	checkTotalF := 0

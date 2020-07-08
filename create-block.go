@@ -319,14 +319,14 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 
 	// sort txes to their corresponding assigments
 	for _, t := range txes {
-		fmt.Println(t)
+		// fmt.Println(t)
 		if t.OrigTxHash == [32]byte{} && t.Hash != [32]byte{} {
 			// this is a normal transaction
 			normal := true
 			for _, inp := range t.Inputs {
 				closestCommittee := txFindClosestCommittee(nodeCtx, inp.TxHash)
-				fmt.Println(bytes32ToString(closestCommittee), bytes32ToString(nodeCtx.self.CommitteeID))
-				fmt.Println(inp)
+				// fmt.Println(bytes32ToString(closestCommittee), bytes32ToString(nodeCtx.self.CommitteeID))
+				// fmt.Println(inp)
 				if closestCommittee != nodeCtx.self.CommitteeID {
 					// the input belongs to another committee
 					normal = false
@@ -335,7 +335,7 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 			}
 			if normal {
 				// all inputs belonged to this committee
-				log.Println("Normal transaction, all inputs in this committee")
+				// log.Println("Normal transaction, all inputs in this committee")
 				// todo add rest of sets here
 				res := processNormalTransaction(nodeCtx, t, spentUTXOSet, addedUTXOSet)
 				if res {
@@ -344,7 +344,7 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 			} else {
 				// some inputs did not belong to this committee
 				//toCrossTxes[t.Hash] = t
-				log.Println("Normal transaction, some inputs not in this committee")
+				// log.Println("Normal transaction, some inputs not in this committee")
 				newCrossTxes := processTransactionWithUnknowInputs(nodeCtx, t, spentUTXOSet, addedUTXOSet)
 				if len(newCrossTxes) == 0 {
 					errFatal(nil, "len of new cross-txes was 0")
@@ -363,22 +363,22 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 		} else if t.OrigTxHash != [32]byte{} && t.Hash == [32]byte{} {
 			// cross tx
 			//incommingCrossTxes[t.OrigTxHash] = t
-			log.Println("Incomming cross-tx")
+			// log.Println("Incomming cross-tx")
 			ok := processIncommingCrossTx(nodeCtx, t, spentUTXOSet, addedUTXOSet)
 			if ok {
-				log.Println("Cross-tx accepted")
+				// log.Println("Cross-tx accepted")
 				processedTxes = append(processedTxes, t)
 			}
 		} else if t.OrigTxHash != [32]byte{} && t.Hash != [32]byte{} {
 			// A cross-tx-r
 			// crossTxResponses[t.id()] = t
-			log.Println("Incomming cross-tx response")
+			// log.Println("Incomming cross-tx response")
 			newTx, ok := proccessCrossTxResponse(nodeCtx, t, spentUTXOSet, addedUTXOSet, tmpCrossTxPool)
 			if ok {
-				log.Println("cross-tx-response ok")
+				// log.Println("cross-tx-response ok")
 				processedTxes = append(processedTxes, t)
 				if newTx != nil {
-					log.Println("Final transaction added")
+					// log.Println("Final transaction added")
 					processedTxes = append(processedTxes, newTx)
 				}
 			}
