@@ -20,7 +20,8 @@ Content-Disposition: attachment; filename="userdata.txt"
 #!/bin/bash -x
 wget -O /home/ubuntu/rapidchain https://rapidchain-bucket.s3.amazonaws.com/rapidchain > /tmp/wget.log
 chmod +x /home/ubuntu/rapidchain > /tmp/chmod.log
-ulimit -n 35000
-/home/ubuntu/rapidchain > /tmp/rapidchain.log
+ulimit -n 65000
+sysctl -w net.ipv4.tcp_tw_reuse=1
+/home2/ubuntu/rapidchain > /tmp/rapidchain.log
 
 --//
