@@ -145,7 +145,7 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	if flagArgs.local {
 		time.Sleep(10 * time.Second)
 	} else {
-		time.Sleep(time.Duration(default_vCPUs) * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 	log.Println("starting tx-gen")
 	rand.Seed(42)

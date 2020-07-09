@@ -201,45 +201,32 @@ func (t *TxPool) processBlock(transactions []*Transaction) {
 	}
 }
 
-type CrossTxMap struct {
-	InputTxID         [32]byte
-	Finished          bool     // indicated wheter or not CrossTxResponseID is filled
-	CrossTxResponseID [32]byte // Points to UTXO set because the outputs should be there
-	Nonce             uint
-}
+// type CrossTxMap struct {
+// 	InputTxID         [32]byte
+// 	Finished          bool     // indicated wheter or not CrossTxResponseID is filled
+// 	CrossTxResponseID [32]byte // Points to UTXO set because the outputs should be there
+// 	Nonce             uint
+// }
 
 // Keeps track of all cross-txes for an originaltx. Is not needed anymore, but may be usefull for debug purposes, so should be deleted after a while (with processIncommingCrossTxResponse changes).
 type CrossTxPool struct {
-	set      map[[32]byte]map[[32]byte]CrossTxMap // OrigTxID -> InputTxID (in other committe) -> CrossTxMap
-	original map[[32]byte]*Transaction            // hold the original transaction untill final transaction is complete
+	// set      map[[32]byte]map[[32]byte]CrossTxMap // OrigTxID -> InputTxID (in other committe) -> CrossTxMap
+	original map[[32]byte]*Transaction // hold the original transaction untill final transaction is complete
 	mux      sync.Mutex
 }
 
 func (ctp *CrossTxPool) init() {
-	ctp.set = make(map[[32]byte]map[[32]byte]CrossTxMap)
+	// ctp.set = make(map[[32]byte]map[[32]byte]CrossTxMap)
 	ctp.original = make(map[[32]byte]*Transaction)
 }
 
-func (ctp *CrossTxPool) add(origTxID [32]byte, inputTxID [32]byte) {
-	ctp.mux.Lock()
-	defer ctp.mux.Unlock()
-	if _, ok := ctp.set[origTxID]; !ok {
-		ctp.set[origTxID] = make(map[[32]byte]CrossTxMap)
-	}
-	ctp.set[origTxID][inputTxID] = CrossTxMap{InputTxID: inputTxID}
-}
-
-// func (ctp *CrossTxPool) addResponse(origTxID [32]byte, inputTxID [32]byte, responseID [32]byte) {
+// func (ctp *CrossTxPool) add(origTxID [32]byte, inputTxID [32]byte) {
 // 	ctp.mux.Lock()
 // 	defer ctp.mux.Unlock()
-// 	if m, ok := ctp.set[origTxID]; ok {
-// 		if v, ok2 := m[inputTxID]; ok2 {
-// 			v.CrossTxResponseID = responseID
-// 			v.Finished = true
-// 			return
-// 		}
+// 	if _, ok := ctp.set[origTxID]; !ok {
+// 		ctp.set[origTxID] = make(map[[32]byte]CrossTxMap)
 // 	}
-// 	errFatal(nil, "CrossTxPool not defined addResponse")
+// 	ctp.set[origTxID][inputTxID] = CrossTxMap{InputTxID: inputTxID}
 // }
 
 // adds a transaction to pool
@@ -247,61 +234,61 @@ func (ctp *CrossTxPool) addOriginalTx(nodeCtx *NodeCtx, tx *Transaction) {
 	// assuming transaction.whatAmI == originaltx
 	ctp.mux.Lock()
 	defer ctp.mux.Unlock()
-	ctp.set[tx.OrigTxHash] = make(map[[32]byte]CrossTxMap)
+	// ctp.set[tx.OrigTxHash] = make(map[[32]byte]CrossTxMap)
 	if tx.Hash != [32]byte{} || tx.OrigTxHash == [32]byte{} {
 		errFatal(nil, "origtx wrong hashes")
 	}
-	for _, inp := range tx.Inputs {
-		if txFindClosestCommittee(nodeCtx, inp.TxHash) == nodeCtx.self.CommitteeID {
-			ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: true, CrossTxResponseID: inp.TxHash, Nonce: inp.N}
-		} else {
-			ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: false}
-		}
-	}
+	// for _, inp := range tx.Inputs {
+	// 	if txFindClosestCommittee(nodeCtx, inp.TxHash) == nodeCtx.self.CommitteeID {
+	// 		ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: true, CrossTxResponseID: inp.TxHash, Nonce: inp.N}
+	// 	} else {
+	// 		ctp.set[tx.OrigTxHash][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: false}
+	// 	}
+	// }
 	ctp.original[tx.OrigTxHash] = tx
 }
 
-func (ctp *CrossTxPool) addResponses(crossTxResponse *Transaction) {
-	ctp.mux.Lock()
-	defer ctp.mux.Unlock()
-	origTxID := crossTxResponse.OrigTxHash
-	if _, ok := ctp.set[origTxID]; !ok {
-		ctp.set[origTxID] = make(map[[32]byte]CrossTxMap)
-	}
-	for _, inp := range crossTxResponse.Inputs {
-		ctp.set[origTxID][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: true, CrossTxResponseID: crossTxResponse.Hash, Nonce: inp.N}
-	}
-}
+// func (ctp *CrossTxPool) addResponses(crossTxResponse *Transaction) {
+// 	ctp.mux.Lock()
+// 	defer ctp.mux.Unlock()
+// 	origTxID := crossTxResponse.OrigTxHash
+// 	if _, ok := ctp.set[origTxID]; !ok {
+// 		ctp.set[origTxID] = make(map[[32]byte]CrossTxMap)
+// 	}
+// 	for _, inp := range crossTxResponse.Inputs {
+// 		ctp.set[origTxID][inp.TxHash] = CrossTxMap{InputTxID: inp.TxHash, Finished: true, CrossTxResponseID: crossTxResponse.Hash, Nonce: inp.N}
+// 	}
+// }
 
-func (ctp *CrossTxPool) getMap(origTxID [32]byte) map[[32]byte]CrossTxMap {
-	ctp.mux.Lock()
-	defer ctp.mux.Unlock()
-	if _, ok := ctp.set[origTxID]; !ok {
-		errFatal(nil, "No origTxID getMap")
-	}
-	return ctp.set[origTxID]
-}
+// func (ctp *CrossTxPool) getMap(origTxID [32]byte) map[[32]byte]CrossTxMap {
+// 	ctp.mux.Lock()
+// 	defer ctp.mux.Unlock()
+// 	if _, ok := ctp.set[origTxID]; !ok {
+// 		errFatal(nil, "No origTxID getMap")
+// 	}
+// 	return ctp.set[origTxID]
+// }
 
-func (ctp *CrossTxPool) getCrossTxMap(origTxID [32]byte, inputTxID [32]byte) *CrossTxMap {
-	ctp.mux.Lock()
-	defer ctp.mux.Unlock()
-	if m, ok := ctp.set[origTxID]; ok {
-		if v, ok2 := m[inputTxID]; ok2 {
-			if v.Finished {
-				mp := new(CrossTxMap)
-				mp.CrossTxResponseID = v.CrossTxResponseID
-				mp.Finished = v.Finished
-				mp.InputTxID = v.InputTxID
-				mp.Nonce = v.Nonce
-				return mp
-			} else {
-				return nil
-			}
-		}
-	}
-	errFatal(nil, "getCrossTxResponseID orig or input IDs not valid")
-	return nil // never reached, but compiler is angry
-}
+// func (ctp *CrossTxPool) getCrossTxMap(origTxID [32]byte, inputTxID [32]byte) *CrossTxMap {
+// 	ctp.mux.Lock()
+// 	defer ctp.mux.Unlock()
+// 	if m, ok := ctp.set[origTxID]; ok {
+// 		if v, ok2 := m[inputTxID]; ok2 {
+// 			if v.Finished {
+// 				mp := new(CrossTxMap)
+// 				mp.CrossTxResponseID = v.CrossTxResponseID
+// 				mp.Finished = v.Finished
+// 				mp.InputTxID = v.InputTxID
+// 				mp.Nonce = v.Nonce
+// 				return mp
+// 			} else {
+// 				return nil
+// 			}
+// 		}
+// 	}
+// 	errFatal(nil, "getCrossTxResponseID orig or input IDs not valid")
+// 	return nil // never reached, but compiler is angry
+// }
 
 func (ctp *CrossTxPool) getOriginal(origTxID [32]byte) *Transaction {
 	ctp.mux.Lock()
@@ -318,32 +305,10 @@ func (ctp *CrossTxPool) removeOriginal(origTxID [32]byte) {
 	delete(ctp.original, origTxID)
 }
 
-func (ctp *CrossTxPool) removeMap(origTxID [32]byte) {
-	ctp.mux.Lock()
-	defer ctp.mux.Unlock()
-	delete(ctp.set, origTxID)
-}
-
-// func (ctp *CrossTxPool) getCrossTxResponseIDsIfAllFinished(origTxID [32]byte) [][32]byte {
+// func (ctp *CrossTxPool) removeMap(origTxID [32]byte) {
 // 	ctp.mux.Lock()
 // 	defer ctp.mux.Unlock()
-// 	if _, ok := ctp.set[origTxID]; !ok {
-// 		errFatal(nil, "No origTxID getCrossTxResponseIDsIFAllFinished")
-// 	}
-// 	res := [][32]byte{}
-// 	all := true
-// 	for _, v := range ctp.set[origTxID] {
-// 		if v.Finished {
-// 			res = append(res, v.CrossTxResponseID)
-// 		} else {
-// 			all = false
-// 			break
-// 		}
-// 	}
-// 	if all {
-// 		return res
-// 	}
-// 	return nil
+// 	delete(ctp.set, origTxID)
 // }
 
 type UTXOSet struct {
@@ -824,15 +789,15 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 			for i := range t.Outputs {
 				nodeCtx.utxoSet._add(t.Inputs[i].TxHash, t.Outputs[i])
 			}
-			nodeCtx.crossTxPool.addResponses(t)
+			// nodeCtx.crossTxPool.addResponses(t)
 			continue
 		} else if what == "finaltransaction" {
 			// get crossTxMap
 			// all inputs in crossTxMap corresponds to finaltransaction and original transaction
-			crossMap := nodeCtx.crossTxPool.getMap(t.OrigTxHash)
+			// crossMap := nodeCtx.crossTxPool.getMap(t.OrigTxHash)
 			original := nodeCtx.crossTxPool.getOriginal(t.OrigTxHash)
-			if crossMap == nil || original == nil {
-				errFatal(nil, fmt.Sprint("Crosstxmap or original was nil", crossMap, original))
+			if original == nil {
+				errFatal(nil, fmt.Sprint("Crosstxmap or original was nil", original))
 			}
 
 			// outputs should be exactly the same in final and original
@@ -873,7 +838,7 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 
 			// remove original tx and crosstxmap from crossTxPool
 			nodeCtx.crossTxPool.removeOriginal(t.OrigTxHash)
-			nodeCtx.crossTxPool.removeMap(t.OrigTxHash)
+			// nodeCtx.crossTxPool.removeMap(t.OrigTxHash)
 			continue
 		} else {
 			errFatal(nil, "unknow whatAmI ")

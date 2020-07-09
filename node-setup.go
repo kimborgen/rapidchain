@@ -256,6 +256,12 @@ func buildCurrentNeighbours(nodeCtx *NodeCtx) {
 	newD := math.Log2(float64(len(nodeCtx.committee.Members) + 1))
 
 	newDint := uint(newD)
+
+	// make it divisible by 2
+	if newDint%2 != 0 {
+		newDint--
+	}
+
 	currentNeighbours := make([][32]byte, newDint)
 	// fmt.Println("New D ", newD, newDint)
 

@@ -470,7 +470,7 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	}
 
 	// add all inputs to crossTxPool map such that we can check if all inputs are satisifed in originalTx
-	tmpCrossTxPool.addResponses(t) // this should be moved?
+	// tmpCrossTxPool.addResponses(t) // this should be moved?
 
 	// we can concur with CrossTxPool for all inputs that have outputs
 	// we can concur with addedUTXO for any inputs that have outputs added in this iteration
@@ -481,10 +481,25 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	allInputsCovered := true
 	for _, inp := range original.Inputs {
 
-		if nodeCtx.crossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash) == nil && tmpCrossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash) == nil {
-			// no we dont have a corresponding output
-			allInputsCovered = false
+		// Check if all inputs from original transaction now exists in the UTXOSet
+		outTx := nodeCtx.utxoSet.get(inp.TxHash, inp.N)
+		if outTx == nil {
+			outTx = addedUTXOSet.get(inp.TxHash, inp.N)
+			if outTx == nil {
+				allInputsCovered = false
+				break
+			}
 		}
+
+		if spentUTXOSet.get(inp.TxHash, inp.N) != nil {
+			allInputsCovered = false
+			break
+		}
+
+		// if nodeCtx.crossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash) == nil && tmpCrossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash) == nil {
+		// 	// no we dont have a corresponding output
+		// 	allInputsCovered = false
+		// }
 	}
 
 	if !allInputsCovered {
@@ -498,13 +513,13 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 
 	newInputs := []*InTx{}
 	for _, inp := range original.Inputs {
-		c := nodeCtx.crossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash)
-		if c == nil {
-			c = tmpCrossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash)
-			if c == nil {
-				errFatal(nil, "should not happen")
-			}
-		}
+		// 	c := nodeCtx.crossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash)
+		// 	if c == nil {
+		// 		c = tmpCrossTxPool.getCrossTxMap(t.OrigTxHash, inp.TxHash)
+		// 		if c == nil {
+		// 			errFatal(nil, "should not happen")
+		// 		}
+		// 	}
 		outTx := nodeCtx.utxoSet.get(inp.TxHash, inp.N)
 		if outTx == nil {
 			outTx = addedUTXOSet.get(inp.TxHash, inp.N)
@@ -534,8 +549,8 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 		if spentUTXOSet.get(inp.TxHash, inp.N) != nil {
 			fmt.Println(inp)
 			fmt.Println(outTx)
-			fmt.Println(bytes32ToString(c.CrossTxResponseID))
-			fmt.Println(c.Nonce)
+			// fmt.Println(bytes32ToString(c.CrossTxResponseID))
+			// fmt.Println(c.Nonce)
 
 			fmt.Println("UTXOSet ", nodeCtx.utxoSet)
 			fmt.Println("addedUTXOSet ", addedUTXOSet)
@@ -570,7 +585,7 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 	}
 
 	// remove from crossTxPool
-	tmpCrossTxPool.removeMap(original.OrigTxHash)
+	// tmpCrossTxPool.removeMap(original.OrigTxHash)
 	tmpCrossTxPool.removeOriginal(original.OrigTxHash)
 	return newTx, true
 }
