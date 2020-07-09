@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"log"
@@ -176,7 +177,7 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	var err error
 
 	// result files
-	files := make([]*os.File, 5)
+	files := make([]*os.File, 6)
 	files[0], err = os.Create("results/tx" + time.Now().String() + ".csv")
 	ifErrFatal(err, "txresfile")
 	files[1], err = os.Create("results/pocverify" + time.Now().String() + ".csv")
@@ -186,7 +187,9 @@ func launchCoordinator(flagArgs *FlagArgs) {
 	files[3], err = os.Create("results/routing" + time.Now().String() + ".csv")
 	ifErrFatal(err, "routing")
 	files[4], err = os.Create("results/ida" + time.Now().String() + ".csv")
-	ifErrFatal(err, "routing")
+	ifErrFatal(err, "ida")
+	files[5], err = os.Create("results/consensusacceptfail" + time.Now().String() + ".csv")
+	ifErrFatal(err, "consensusacceptfail")
 	for _, f := range files {
 		defer f.Close()
 	}
@@ -494,7 +497,7 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 		r.add(committeeID, tuple.T)
 	case "transaction_recieved":
 		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
-		notOkErr(ok, "find_node")
+		notOkErr(ok, "transaction recived")
 		ID := toByte32(bat.B)
 		rMap.add(ID)
 		r := rMap.get(ID)
@@ -520,14 +523,14 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 		}
 	case "start_ida_gossip":
 		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
-		notOkErr(ok, "find_node")
+		notOkErr(ok, "start ida gossip")
 		ID := toByte32(bat.B)
 		idaresults.add(ID)
 		ida := idaresults.get(ID)
 		ida.start = bat.T
 	case "reconstructed_ida_gossip":
 		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
-		notOkErr(ok, "find_node")
+		notOkErr(ok, "reconstructed idagossip")
 		ID := toByte32(bat.B)
 		idaresults.add(ID)
 		ida := idaresults.get(ID)
@@ -547,6 +550,22 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 			ida.mux.Unlock()
 			writeStringToFile(s, files[4])
 		}
+	case "consensus_accept_fail":
+		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
+		notOkErr(ok, "consensus accept fail")
+		if len(bat.B) != 88 {
+			errFatal(nil, fmt.Sprintf("length of consensus accept fail msg was not 80: %d ", len(bat.B)))
+		}
+		// 32 32 8 8
+		cID := toByte32(bat.B[:32])
+		pub := toByte32(bat.B[32:64])
+		iter := binary.LittleEndian.Uint64(bat.B[64:72])
+		totalVotes := int64(binary.LittleEndian.Uint64(bat.B[72:80]))
+		rec := int64(binary.LittleEndian.Uint64(bat.B[80:88]))
+		log.Printf("[ConsensusAcceptFail] cID: %s, pub: %s, iter: %d, totalVotes: %d, rec: %d", bytes32ToString(cID), bytes32ToString(pub), iter, totalVotes, rec)
+		s := fmt.Sprintf("%s,%s,%d,%d,%d", bytes32ToString(cID), bytes32ToString(pub), iter, totalVotes, rec)
+		writeStringToFile(s, files[5])
+
 	default:
 		errFatal(nil, "no known message type (coordinator)")
 	}

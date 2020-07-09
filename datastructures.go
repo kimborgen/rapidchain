@@ -861,6 +861,10 @@ type ConsensusMsg struct {
 	Sig        *Sig // Sig of the hash of the above
 }
 
+func (cMsg *ConsensusMsg) String() string {
+	return fmt.Sprintf("[cMsg] GossipHash: %s, Tag: %s, Pubkey: %s, Sig: %s\n ", bytes32ToString(cMsg.GossipHash), cMsg.Tag, bytes32ToString(cMsg.Pub.Bytes), bytesToString(cMsg.Sig.bytes()))
+}
+
 func (cMsg *ConsensusMsg) calculateHash() [32]byte {
 	b := byteSliceAppend(cMsg.GossipHash[:], []byte(cMsg.Tag), cMsg.Pub.Bytes[:])
 	return hash(b)

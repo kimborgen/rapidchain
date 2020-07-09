@@ -153,7 +153,7 @@ func nodeHandleConnection(
 				<-nodeCtx.channels.echoChan
 			}
 			go handleConsensusEcho(&cMsg, nodeCtx)
-			go handleConsensusAccept(&cMsg, nodeCtx)
+			go handleConsensusAccept(&cMsg, nodeCtx, 0)
 		}
 		handleConsensus(nodeCtx, &cMsg, msg.FromPub)
 

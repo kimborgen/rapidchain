@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"time"
@@ -28,6 +29,7 @@ func handleConsensus(
 		// check that we do not have any other message with this gossipheader
 		// TODO if blocks are reproposed then chagne this
 		if nodeCtx.consensusMsgs._exists(cMsg.GossipHash) {
+			fmt.Println(cMsg)
 			errFatal(nil, "allready have msgs in this gossiphash")
 		}
 
@@ -119,7 +121,7 @@ func handleConsensusEcho(
 		for len(nodeCtx.channels.echoChan) < int(requiredVotes) {
 			time.Sleep(10 * time.Millisecond)
 			timeout += 1
-			if t := default_delta / (10 * 2); timeout >= t {
+			if t := default_delta; timeout >= t {
 				errr(nil, fmt.Sprintf("Echos not recived in time %d", t))
 				return
 			}
@@ -152,12 +154,18 @@ func handleConsensusEcho(
 
 func handleConsensusAccept(
 	cMsg *ConsensusMsg,
-	nodeCtx *NodeCtx) {
+	nodeCtx *NodeCtx,
+	recursive int64) {
 
 	requiredVotes := (len(nodeCtx.committee.Members) / int(nodeCtx.flagArgs.committeeF)) + 1
 
-	// leader propose, echo gossip, accept gossip
-	time.Sleep(3 * default_delta * time.Millisecond)
+	if recursive > 0 {
+		log.Println("Recursive iter", recursive)
+		time.Sleep(default_delta * time.Millisecond)
+	} else {
+		// leader propose, echo gossip, accept gossip
+		time.Sleep(3 * default_delta * time.Millisecond)
+	}
 
 	// check if we have enough required votes
 	totalVotes := nodeCtx.consensusMsgs.countValidAccepts(cMsg.GossipHash)
@@ -211,13 +219,28 @@ func handleConsensusAccept(
 		// increase iteration
 		nodeCtx.i.add()
 		log.Println("Accept sucess!")
-
 		// start new iteration
 		startNewIteration(nodeCtx)
 	} else {
 		// not enough accepts, terminate
 		// TODO add coordinator feedback here
+
+		bat := new(ByteArrayAndTimestamp)
+		totV := make([]byte, 8)
+		binary.LittleEndian.PutUint64(totV, uint64(totalVotes))
+		iter := make([]byte, 8)
+		binary.LittleEndian.PutUint64(iter, uint64(nodeCtx.i.getI()))
+		// 32 32 8 8 8
+		rec := make([]byte, 8)
+		binary.LittleEndian.PutUint64(rec, uint64(recursive))
+
+		bat.B = byteSliceAppend(nodeCtx.self.CommitteeID[:], nodeCtx.self.Priv.Pub.Bytes[:], iter[:], totV[:], rec[:])
+		bat.T = time.Now() // dont need timestamp but why not
+		go dialAndSendToCoordinator("consensus_accept_fail", bat)
+
 		log.Println("Not enough votes ", totalVotes)
+		recursive++
+		handleConsensusAccept(cMsg, nodeCtx, recursive)
 		return
 	}
 
