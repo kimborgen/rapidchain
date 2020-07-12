@@ -30,7 +30,8 @@ func handleConsensus(
 		// TODO if blocks are reproposed then chagne this
 		if nodeCtx.consensusMsgs._exists(cMsg.GossipHash) {
 			fmt.Println(cMsg)
-			errFatal(nil, "allready have msgs in this gossiphash")
+			errr(nil, "allready have msgs in this gossiphash")
+			return
 		}
 
 		nodeCtx.consensusMsgs._add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
@@ -70,15 +71,15 @@ func handleConsensus(
 		if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
 			timeout := 0
 			for {
-			time.Sleep(dur)
+				time.Sleep(dur)
 				if nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
 					break
-			}
+				}
 				if timeout > 5 {
 					// errFatal(nil, "Recived an echo, but have not recived a propose for this gossiphash")
 					// handleConsensusAccept will deal with missing block
 					return
-		}
+				}
 				timeout++
 			}
 		}
@@ -250,7 +251,11 @@ func handleConsensusAccept(
 
 		log.Println("Not enough votes ", totalVotes)
 		recursive++
-		handleConsensusAccept(cMsg, nodeCtx, recursive)
+		if recursive >= 5 {
+			startNewIteration(nodeCtx)
+		} else {
+			handleConsensusAccept(cMsg, nodeCtx, recursive)
+		}
 		return
 	}
 
