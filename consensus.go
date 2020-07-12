@@ -68,9 +68,18 @@ func handleConsensus(
 		// check that we have recived a propose from this gossiphash
 
 		if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
+			timeout := 0
+			for {
 			time.Sleep(dur)
-			if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
-				errFatal(nil, "Recived an echo, but have not recived a propose for this gossiphash")
+				if nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
+					break
+			}
+				if timeout > 5 {
+					// errFatal(nil, "Recived an echo, but have not recived a propose for this gossiphash")
+					// handleConsensusAccept will deal with missing block
+					return
+		}
+				timeout++
 			}
 		}
 		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
@@ -186,6 +195,7 @@ func handleConsensusAccept(
 
 		// add to blockchain
 		nodeCtx.blockchain.add(finalBlock)
+		nodeCtx.i.add()
 
 		// process block
 		finalBlock.processBlock(nodeCtx)
@@ -217,7 +227,7 @@ func handleConsensusAccept(
 		}
 
 		// increase iteration
-		nodeCtx.i.add()
+
 		log.Println("Accept sucess!")
 		// start new iteration
 		startNewIteration(nodeCtx)
