@@ -68,9 +68,18 @@ func handleConsensus(
 		// check that we have recived a propose from this gossiphash
 
 		if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
-			time.Sleep(dur)
-			if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
-				errFatal(nil, "Recived an echo, but have not recived a propose for this gossiphash")
+			timeout := 0
+			for {
+				time.Sleep(dur)
+				if nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
+					break
+				}
+				if timeout > 5 {
+					// errFatal(nil, "Recived an echo, but have not recived a propose for this gossiphash")
+					// handleConsensusAccept will deal with missing block
+					return
+				}
+				timeout++
 			}
 		}
 		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
@@ -122,6 +131,7 @@ func handleConsensusEcho(
 			time.Sleep(10 * time.Millisecond)
 			timeout += 1
 			if t := default_delta; timeout >= t {
+				// requestAndAddMissingBlocks(nodeCtx)
 				errr(nil, fmt.Sprintf("Echos not recived in time %d", t))
 				return
 			}
@@ -147,7 +157,11 @@ func handleConsensusEcho(
 	} else {
 		// not enough votes, terminate
 		// TODO add coordinator feedback here
+
 		log.Println("Not enough votes ", totalVotes)
+
+		// requestAndAddMissingBlocks(nodeCtx)
+
 		return
 	}
 }
@@ -240,8 +254,17 @@ func handleConsensusAccept(
 
 		log.Println("Not enough votes ", totalVotes)
 		recursive++
-		handleConsensusAccept(cMsg, nodeCtx, recursive)
-		return
+
+		// if too many recursive call, end trying and try to request the missing blocks instead.
+		// if recursive > 5 {
+		if true {
+			requestAndAddMissingBlocks(nodeCtx)
+			return
+		} else {
+			handleConsensusAccept(cMsg, nodeCtx, recursive)
+			return
+		}
+
 	}
 
 }

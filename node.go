@@ -234,9 +234,96 @@ func nodeHandleConnection(
 
 		// add to tx pool
 		// nodeCtx.txPool.safeAdd(&tMsg)
+	case "request_block":
+		iter, ok := msg.Msg.(uint64)
+		notOkErr(ok, "request_block decoding")
+
+		block := nodeCtx.blockchain.getByIteration(iter)
+		tmp := new(RequestBlockAnswer)
+		// {block, uint64(nodeCtx.i.getI())}
+		tmp.Block = block
+		tmp.LastIteration = uint64(nodeCtx.i.getI())
+		sendMsg(conn, tmp)
 
 	default:
 		log.Fatal("[Error] no known message type")
 	}
 
+}
+
+type RequestBlockAnswer struct {
+	Block         *FinalBlock
+	LastIteration uint64
+}
+
+// Requests and adds all missing blocks
+func requestAndAddMissingBlocks(nodeCtx *NodeCtx) {
+	lastBlock := nodeCtx.blockchain.getLatest()
+
+	if lastBlock.ProposedBlock.Iteration+1 != nodeCtx.i.getI() {
+		log.Println(lastBlock.ProposedBlock.Iteration+1, nodeCtx.i.getI())
+		errFatal(nil, "blockchain and iteration not in sync not equal")
+	}
+
+	request := new(Msg)
+	request.Typ = "request_block"
+	request.Msg = uint64(lastBlock.ProposedBlock.Iteration + 1)
+	request.FromPub = nodeCtx.self.Priv.Pub
+	response := new(RequestBlockAnswer)
+
+	// choose a random node from the committee
+	for {
+		rnd := rand.Intn(len(nodeCtx.committee.Members))
+		var node *CommitteeMember
+		i := 0
+		for _, cm := range nodeCtx.committee.Members {
+			if i == rnd {
+				node = cm
+				break
+			}
+			i++
+		}
+		if node == nil {
+			errFatal(nil, "could not pick neighbour")
+		}
+
+		conn := dial(node.IP)
+
+		log.Println("Before request")
+		sendMsg(conn, request)
+		reciveMsg(conn, response)
+		conn.Close()
+		log.Println("After recived request")
+
+		if response == nil {
+			errFatal(nil, "response was nil")
+		}
+
+		if lastBlock.ProposedBlock.Iteration >= response.Block.ProposedBlock.Iteration {
+			log.Println("No new block, try again with new node", lastBlock.ProposedBlock.Iteration, response.Block.ProposedBlock.Iteration)
+			continue
+		}
+		break
+	}
+
+	// TODO verify block and signatures
+	if len(response.Block.Signatures) < len(nodeCtx.committee.Members)/2 {
+		log.Println("not enough signatures")
+		return
+	}
+
+	if response.Block.ProposedBlock.PreviousGossipHash != lastBlock.ProposedBlock.GossipHash {
+		log.Println("PreviousGossipHash was not lastBlock")
+		return
+	}
+
+	nodeCtx.blockchain.add(response.Block)
+	response.Block.forceProcessBlock(nodeCtx)
+	nodeCtx.i.add()
+
+	if response.LastIteration != uint64(response.Block.ProposedBlock.Iteration) {
+		log.Println(response.LastIteration, response.Block.ProposedBlock.Iteration, nodeCtx.i.getI())
+		log.Println("Last iteration in response was not the returend block, therefor request next missing block")
+		requestAndAddMissingBlocks(nodeCtx)
+	}
 }

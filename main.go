@@ -65,6 +65,7 @@ func main() {
 	dur := time.Now().Sub(time.Now())
 	gob.Register(dur)
 	gob.Register(ByteArrayAndTimestamp{})
+	gob.Register(RequestBlockAnswer{})
 
 	if flagArgs.local {
 		coord = coord_local
