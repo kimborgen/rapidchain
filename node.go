@@ -96,12 +96,6 @@ func nodeHandleConnection(
 				nodeCtx.blockchain._addProposedBlock(block)
 				nodeCtx.blockchain.mux.Unlock()
 				fmt.Printf("Block with gh %s added\n", bytes32ToString(block.GossipHash))
-
-				// gossip crossTxes
-				// don't need to wait untill block is finished because we have verified the block
-				// and since we are honest we expect the block to pass
-				go gossipCrossTxes(nodeCtx, block.Transactions)
-
 			default:
 				errFatal(nil, "Unknown IDAGossipMsg type")
 			}
@@ -110,6 +104,15 @@ func nodeHandleConnection(
 	case "consensus":
 		cMsg, ok := msg.Msg.(ConsensusMsg)
 		notOkErr(ok, "ConsensusSignature decoding")
+
+		if cMsg.Tag == "propose" {
+			// empty channel
+			for len(nodeCtx.channels.echoChan) > 0 {
+				<-nodeCtx.channels.echoChan
+			}
+			go handleConsensusEcho(&cMsg, nodeCtx)
+			go handleConsensusAccept(&cMsg, nodeCtx, 0)
+		}
 
 		// check if we allready have accepted the block
 		if nodeCtx.blockchain.isBlock(cMsg.GossipHash) {
@@ -147,14 +150,6 @@ func nodeHandleConnection(
 			}
 		}
 
-		if cMsg.Tag == "propose" {
-			// empty channel
-			for len(nodeCtx.channels.echoChan) > 0 {
-				<-nodeCtx.channels.echoChan
-			}
-			go handleConsensusEcho(&cMsg, nodeCtx)
-			go handleConsensusAccept(&cMsg, nodeCtx, 0)
-		}
 		handleConsensus(nodeCtx, &cMsg, msg.FromPub)
 
 	case "find_node":

@@ -122,8 +122,6 @@ func shouldISendCrossTX(nodeCtx *NodeCtx) bool {
 	_cutoff := math.Log2(float64(len(nodeCtx.committee.Members)))
 	cutoff := int(math.Abs(_cutoff))
 
-	log.Println("Cutoff (log(m)): ", cutoff)
-
 	// the leader is the lowest in list except if selfHash is lower than that.
 	// fmt.Println(byte32Operations(selfHash, "<", listOfHashes[0].toSort))
 	if byte32Operations(selfHash, "<", listOfHashes[cutoff].toSort) {

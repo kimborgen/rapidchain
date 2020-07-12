@@ -833,12 +833,12 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 				}
 			}
 
-			var tot uint = 0
+			// var tot uint = 0
 			var totOut uint = 0
 			// spend inputs
 			for _, inp := range t.Inputs {
-				UTXO := nodeCtx.utxoSet._getAndRemove(inp.TxHash, inp.N)
-				tot += UTXO.Value
+				nodeCtx.utxoSet._getAndRemove(inp.TxHash, inp.N)
+				// tot += UTXO.Value
 			}
 
 			if t.OrigTxHash != original.OrigTxHash || t.OrigTxHash == [32]byte{} {
@@ -851,9 +851,9 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 				totOut += out.Value
 			}
 
-			if tot != totOut {
-				errFatal(nil, fmt.Sprintf("finaltransaction: Spent value %d not equal to new unspent value %d", tot, totOut))
-			}
+			// if tot != totOut {
+			// 	errFatal(nil, fmt.Sprintf("finaltransaction: Spent value %d not equal to new unspent value %d", tot, totOut))
+			// }
 
 			// remove original tx and crosstxmap from crossTxPool
 			nodeCtx.crossTxPool.removeOriginal(t.OrigTxHash)

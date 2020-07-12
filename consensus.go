@@ -201,14 +201,13 @@ func handleConsensusAccept(
 
 		// add to blockchain
 		nodeCtx.blockchain.add(finalBlock)
-		nodeCtx.i.add()
 
 		// process block
 		finalBlock.processBlock(nodeCtx)
 
 		// create cross-tx-responses and send
 		if shouldISendCrossTX(nodeCtx) {
-			fmt.Println("yes")
+			fmt.Println("\nRouting cross tx!! \n")
 			for _, t := range finalBlock.ProposedBlock.Transactions {
 				what := t.whatAmI(nodeCtx)
 				if what == "crosstxresponse_C_in" {
@@ -223,7 +222,16 @@ func handleConsensusAccept(
 
 					msg := Msg{"crosstransactionresponse", newTx, nodeCtx.self.Priv.Pub}
 					go routeTx(nodeCtx, msg, txFindClosestCommittee(nodeCtx, newTx.OrigTxHash))
+
+				} else if what == "crosstx" {
+					msg := Msg{"crosstransaction", t, nodeCtx.self.Priv.Pub}
+					closest := txFindClosestCommittee(nodeCtx, t.Inputs[0].TxHash)
+					if closest == nodeCtx.self.CommitteeID {
+						errFatal(nil, "closest was own committe crosstx")
+					}
+					go routeTx(nodeCtx, msg, closest)
 				}
+
 			}
 		}
 
@@ -236,6 +244,7 @@ func handleConsensusAccept(
 		}
 
 		// increase iteration
+		nodeCtx.i.add()
 
 		log.Println("Accept sucess!")
 		// start new iteration

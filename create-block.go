@@ -840,19 +840,3 @@ func validateNormalTransaction(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *U
 
 	return true
 }
-
-// goes trough the transactions in the block and gossips the transaction to the corresponding committees
-func gossipCrossTxes(nodeCtx *NodeCtx, transactions []*Transaction) {
-	for _, t := range transactions {
-		what := t.whatAmI(nodeCtx)
-		// log.Println(what)
-		if what == "crosstx" {
-			msg := Msg{"crosstransaction", t, nodeCtx.self.Priv.Pub}
-			closest := txFindClosestCommittee(nodeCtx, t.Inputs[0].TxHash)
-			if closest == nodeCtx.self.CommitteeID {
-				errFatal(nil, "closest was own committe crosstx")
-			}
-			go routeTx(nodeCtx, msg, closest)
-		}
-	}
-}
