@@ -469,6 +469,7 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 		notOkErr(ok, "coordinator consensus cMsg decoding")
 		//coordinatorHandleConsensus(cMsg, consensusResults)
 	case "finalblock":
+		log.Println("Recived: ", msg.Typ)
 		block, ok := msg.Msg.(FinalBlock)
 		notOkErr(ok, "finalblock")
 		finalBlockChan <- block
@@ -551,6 +552,7 @@ func coordinatorDebugStatsHandleConnection(conn net.Conn,
 			writeStringToFile(s, files[4])
 		}
 	case "consensus_accept_fail":
+		log.Println("Recived: ", msg.Typ)
 		bat, ok := msg.Msg.(ByteArrayAndTimestamp)
 		notOkErr(ok, "consensus accept fail")
 		if len(bat.B) != 88 {

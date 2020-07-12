@@ -154,7 +154,7 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 
 		l := len(finalBlockChan)
 		for i := 0; i < l; i++ {
-			// fmt.Println("Recived finalblock")
+			fmt.Println("Recived finalblock")
 			finalBlock := <-finalBlockChan
 			fmt.Println(finalBlock.ProposedBlock)
 			for _, t := range finalBlock.ProposedBlock.Transactions {
@@ -230,6 +230,7 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	// pick a random value from the users total value
 	totVal := userSets[user.Pub.Bytes]._totalValue()
 
+	timeout := 0
 	for {
 		if totVal == 0 {
 			// no value in this user unfortuantly, so start again
@@ -238,6 +239,11 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 
 			// pick a random value from the users total value
 			totVal = userSets[user.Pub.Bytes]._totalValue()
+			time.Sleep(10 * time.Millisecond)
+			timeout++
+			if timeout >= 10 {
+				return
+			}
 		} else {
 			break
 		}

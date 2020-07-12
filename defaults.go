@@ -30,7 +30,7 @@ const coord_aws string = "172.31.38.0"
 const coord_gcloud string = "10.128.0.3"
 const coord_local string = "127.0.0.1"
 
-var coord string = coord_gcloud
+var coord string = coord_aws
 
 type FlagArgs struct {
 	function   string
