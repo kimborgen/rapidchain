@@ -123,7 +123,7 @@ func nodeHandleConnection(
 			timeout := 0
 			var found bool = false
 			for {
-				time.Sleep(default_delta * time.Millisecond)
+				time.Sleep(time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
 				if nodeCtx.blockchain.isProposedBlock(cMsg.GossipHash) {
 					found = true
 					break

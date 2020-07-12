@@ -136,7 +136,7 @@ func leader(nodeCtx *NodeCtx) {
 	}
 
 	// sleep a delta before iniation consensus
-	time.Sleep(default_delta * time.Millisecond)
+	time.Sleep(time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
 
 	// create a propose msg to initate consensus
 	cMsg := new(ConsensusMsg)

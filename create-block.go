@@ -595,6 +595,9 @@ func processIncommingCrossTx(nodeCtx *NodeCtx, t *Transaction, spentUTXOSet *UTX
 
 	if t.Outputs != nil {
 		fmt.Print(t)
+		fmt.Print(t.whatAmI(nodeCtx))
+		fmt.Print(bytes32ToString(txFindClosestCommittee(nodeCtx, t.OrigTxHash)))
+		fmt.Println(bytes32ToString(nodeCtx.self.CommitteeID))
 		errFatal(nil, "outputs was not nil in incomming cross-tx")
 	}
 

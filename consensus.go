@@ -53,7 +53,7 @@ func handleConsensus(
 
 		log.Println("Echo recived from ", fromPub.string())
 		// wait for delta so each node will recive enough echos
-		dur := default_delta * time.Millisecond
+		dur := time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond
 		time.Sleep(dur)
 
 		_msg := Msg{"consensus", "echo", nodeCtx.self.Priv.Pub}
@@ -123,15 +123,15 @@ func handleConsensusEcho(
 	requiredVotes := (len(nodeCtx.committee.Members) / int(nodeCtx.flagArgs.committeeF)) + 1
 
 	// leader propose, echo gossip
-	time.Sleep(2 * default_delta * time.Millisecond)
+	time.Sleep(2 * time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
 
 	if len(nodeCtx.channels.echoChan) < int(requiredVotes) {
 		//  wait a few ms to be sure (computing)
-		timeout := 0
+		timeout := uint(0)
 		for len(nodeCtx.channels.echoChan) < int(requiredVotes) {
 			time.Sleep(10 * time.Millisecond)
 			timeout += 1
-			if t := default_delta; timeout >= t {
+			if t := nodeCtx.flagArgs.delta; timeout >= t {
 				// requestAndAddMissingBlocks(nodeCtx)
 				errr(nil, fmt.Sprintf("Echos not recived in time %d", t))
 				return
@@ -176,10 +176,10 @@ func handleConsensusAccept(
 
 	if recursive > 0 {
 		log.Println("Recursive iter", recursive)
-		time.Sleep(default_delta * time.Millisecond)
+		time.Sleep(time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
 	} else {
 		// leader propose, echo gossip, accept gossip
-		time.Sleep(3 * default_delta * time.Millisecond)
+		time.Sleep(3 * time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
 	}
 
 	// check if we have enough required votes

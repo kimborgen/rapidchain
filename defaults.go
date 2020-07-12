@@ -44,4 +44,5 @@ type FlagArgs struct {
 	totalCoins uint
 	tps        uint
 	local      bool
+	delta      uint
 }

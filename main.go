@@ -26,6 +26,7 @@ func main() {
 	totalCointsPtr := flag.Uint("totalCoins", default_totalCoins, "total coins in system")
 	tpsPtr := flag.Uint("tps", default_tps, "transactions per second")
 	localPtr := flag.Bool("local", false, "local run on this computer")
+	deltaPtr := flag.Uint("delta", default_delta, "delta")
 
 	flag.Parse()
 
@@ -44,6 +45,7 @@ func main() {
 	flagArgs.totalCoins = *totalCointsPtr
 	flagArgs.tps = *tpsPtr
 	flagArgs.local = *localPtr
+	flagArgs.delta = *deltaPtr
 
 	// generate a random key to send the P256 curve interface to gob.Register because it wouldnt cooperate
 	randomKey := new(PrivKey)
