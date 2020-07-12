@@ -207,20 +207,23 @@ func handleConsensusAccept(
 		finalBlock.processBlock(nodeCtx)
 
 		// create cross-tx-responses and send
-		for _, t := range finalBlock.ProposedBlock.Transactions {
-			what := t.whatAmI(nodeCtx)
-			if what == "crosstxresponse_C_in" {
+		if shouldISendCrossTX(nodeCtx) {
+			fmt.Println("yes")
+			for _, t := range finalBlock.ProposedBlock.Transactions {
+				what := t.whatAmI(nodeCtx)
+				if what == "crosstxresponse_C_in" {
 
-				// we do not want to have PoC on final blocks that are in this committee
-				// so make a copy
+					// we do not want to have PoC on final blocks that are in this committee
+					// so make a copy
 
-				newTx := new(Transaction)
-				copier.Copy(newTx, t)
+					newTx := new(Transaction)
+					copier.Copy(newTx, t)
 
-				addProofOfConsensus(nodeCtx, newTx, finalBlock)
+					addProofOfConsensus(nodeCtx, newTx, finalBlock)
 
-				msg := Msg{"crosstransactionresponse", newTx, nodeCtx.self.Priv.Pub}
-				go routeTx(nodeCtx, msg, txFindClosestCommittee(nodeCtx, newTx.OrigTxHash))
+					msg := Msg{"crosstransactionresponse", newTx, nodeCtx.self.Priv.Pub}
+					go routeTx(nodeCtx, msg, txFindClosestCommittee(nodeCtx, newTx.OrigTxHash))
+				}
 			}
 		}
 

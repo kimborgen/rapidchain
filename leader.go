@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math"
 	"time"
 )
 
@@ -69,13 +70,13 @@ func leaderElection(nodeCtx *NodeCtx) {
 
 	// calculate hash of self
 	selfHash := hash(byteSliceAppend(nodeCtx.self.Priv.Pub.Bytes[:], rnd[:], currI))
-	fmt.Println("self: ", bytes32ToString(selfHash), bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
+	// fmt.Println("self: ", bytes32ToString(selfHash), bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
 	for i, lof := range listOfHashes {
 		fmt.Println(i, bytes32ToString(lof.toSort), bytes32ToString(lof.original))
 	}
 
 	// the leader is the lowest in list except if selfHash is lower than that.
-	fmt.Println(byte32Operations(selfHash, "<", listOfHashes[0].toSort))
+	// fmt.Println(byte32Operations(selfHash, "<", listOfHashes[0].toSort))
 	if byte32Operations(selfHash, "<", listOfHashes[0].toSort) {
 		nodeCtx.committee.CurrentLeader = nodeCtx.self.Priv.Pub
 		log.Println("I am leader!", nodeCtx.amILeader())
@@ -83,6 +84,52 @@ func leaderElection(nodeCtx *NodeCtx) {
 		leader := listOfHashes[0].original
 		nodeCtx.committee.CurrentLeader = nodeCtx.committee.Members[leader].Pub
 	}
+}
+
+func shouldISendCrossTX(nodeCtx *NodeCtx) bool {
+	// log(m) nodes as defined in thesis
+
+	// get current randomness
+	recBlock := nodeCtx.blockchain.getLastReconfigurationBlock()
+	rnd := recBlock.Randomness
+
+	// get current iteration
+	_currIteration := nodeCtx.i.getI()
+	currI := make([]byte, 8)
+	binary.LittleEndian.PutUint64(currI, uint64(_currIteration))
+
+	listOfHashes := make([]byte32sortHelper, len(nodeCtx.committee.Members))
+	// calculate hash(id | rnd | currI) for every member
+	ii := 0
+	for _, m := range nodeCtx.committee.Members {
+		connoctated := byteSliceAppend(m.Pub.Bytes[:], rnd[:], currI)
+		hsh := hash(connoctated)
+		listOfHashes[ii] = byte32sortHelper{m.Pub.Bytes, hsh}
+		ii++
+	}
+
+	// sort list
+	listOfHashes = sortListOfByte32SortHelper(listOfHashes)
+
+	// calculate hash of self
+	selfHash := hash(byteSliceAppend(nodeCtx.self.Priv.Pub.Bytes[:], rnd[:], currI))
+	// fmt.Println("self: ", bytes32ToString(selfHash), bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
+	for i, lof := range listOfHashes {
+		fmt.Println(i, bytes32ToString(lof.toSort), bytes32ToString(lof.original))
+	}
+
+	// log(m)
+	_cutoff := math.Log2(float64(len(nodeCtx.committee.Members)))
+	cutoff := int(math.Abs(_cutoff))
+
+	log.Println("Cutoff (log(m)): ", cutoff)
+
+	// the leader is the lowest in list except if selfHash is lower than that.
+	// fmt.Println(byte32Operations(selfHash, "<", listOfHashes[0].toSort))
+	if byte32Operations(selfHash, "<", listOfHashes[cutoff].toSort) {
+		return true
+	}
+	return false
 }
 
 func basicLeaderElection(nodeCtx *NodeCtx) *PubKey {
