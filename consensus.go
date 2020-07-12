@@ -30,7 +30,8 @@ func handleConsensus(
 		// TODO if blocks are reproposed then chagne this
 		if nodeCtx.consensusMsgs._exists(cMsg.GossipHash) {
 			fmt.Println(cMsg)
-			errFatal(nil, "allready have msgs in this gossiphash")
+			errr(nil, "allready have msgs in this gossiphash")
+			return
 		}
 
 		nodeCtx.consensusMsgs._add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
@@ -200,6 +201,7 @@ func handleConsensusAccept(
 
 		// add to blockchain
 		nodeCtx.blockchain.add(finalBlock)
+		nodeCtx.i.add()
 
 		// process block
 		finalBlock.processBlock(nodeCtx)
@@ -231,7 +233,7 @@ func handleConsensusAccept(
 		}
 
 		// increase iteration
-		nodeCtx.i.add()
+
 		log.Println("Accept sucess!")
 		// start new iteration
 		startNewIteration(nodeCtx)
@@ -254,17 +256,12 @@ func handleConsensusAccept(
 
 		log.Println("Not enough votes ", totalVotes)
 		recursive++
-
-		// if too many recursive call, end trying and try to request the missing blocks instead.
-		// if recursive > 5 {
-		if true {
-			requestAndAddMissingBlocks(nodeCtx)
-			return
+		if recursive >= 5 {
+			startNewIteration(nodeCtx)
 		} else {
 			handleConsensusAccept(cMsg, nodeCtx, recursive)
-			return
 		}
-
+		return
 	}
 
 }

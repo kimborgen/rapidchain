@@ -854,6 +854,80 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 	nodeCtx.utxoSet.mux.Unlock()
 }
 
+// forces the processing of a block without checking for valid UTXOs. (This is valid only if signature set is valid)
+func (b *FinalBlock) forceProcessBlock(nodeCtx *NodeCtx) {
+	// assume that signatures and so on are valid because the block has gone trough consensus
+	// lock utxoSet because we are going to do a lot of changes that must be atomic with the respect to the block
+	nodeCtx.utxoSet.mux.Lock()
+	// fmt.Println("Processing block")
+	// we do not want to proccess new cross-tx'es, or original tx'es (UTXO's in original TX are still spendable)
+	for _, t := range b.ProposedBlock.Transactions {
+		what := t.whatAmI(nodeCtx)
+		// fmt.Println("processBlock: ", what)
+		// fmt.Println(t)
+		if what == "normal" {
+			// spend inputs
+			for _, inp := range t.Inputs {
+				nodeCtx.utxoSet._removeOutput(inp.TxHash, inp.N)
+			}
+			for _, out := range t.Outputs {
+				nodeCtx.utxoSet._add(t.Hash, out)
+				// fmt.Printf("%s Added UTXO with N %d, Value %d and Pub %s\n", bytesToString(nodeCtx.self.CommitteeID[:]), out.N, out.Value, bytesToString(out.PubKey.Bytes[:]))
+			}
+			// if signatures is nil, then this is the genesis block
+			// check if total input == total output, except if this is the gensis block (then signatures will be nil)
+			continue
+		} else if what == "crosstx" {
+			// do nothing (no inputs in this committee)
+			continue
+		} else if what == "originaltx" {
+			// add inputs to special map so we can keep track of originalTx and its cross-txes
+			nodeCtx.crossTxPool.addOriginalTx(nodeCtx, t)
+			continue
+		} else if what == "crosstxresponse_C_in" {
+			// spend inputs, but do not add outputs, because they belong in another committee
+			for _, inp := range t.Inputs {
+				nodeCtx.utxoSet._removeOutput(inp.TxHash, inp.N)
+			}
+			continue
+		} else if what == "crosstxresponse_C_out" {
+			// add outputs, but do not do anything with inputs, because they come from another comittee
+			if len(t.Inputs) != len(t.Outputs) {
+				errFatal(nil, "input n output length not equal idkrn")
+			}
+			for i := range t.Outputs {
+				nodeCtx.utxoSet._add(t.Inputs[i].TxHash, t.Outputs[i])
+			}
+			// nodeCtx.crossTxPool.addResponses(t)
+			continue
+		} else if what == "finaltransaction" {
+
+			for _, inp := range t.Inputs {
+				nodeCtx.utxoSet._removeOutput(inp.TxHash, inp.N)
+			}
+
+			// add outputs
+			for _, out := range t.Outputs {
+				nodeCtx.utxoSet._add(t.OrigTxHash, out)
+			}
+
+			// remove original tx and crosstxmap from crossTxPool
+			nodeCtx.crossTxPool.removeOriginal(t.OrigTxHash)
+			continue
+		} else {
+			errFatal(nil, "unknow whatAmI ")
+		}
+	}
+
+	// remove transactions from tx pool
+	nodeCtx.txPool.processBlock(b.ProposedBlock.Transactions)
+
+	// print utxo set
+	// fmt.Println(nodeCtx.utxoSet)
+
+	nodeCtx.utxoSet.mux.Unlock()
+}
+
 type ConsensusMsg struct {
 	GossipHash [32]byte
 	Tag        string // propose, echo, accept or pending
@@ -1078,10 +1152,28 @@ func (b *Blockchain) _getLatest() *FinalBlock {
 	return b.Blocks[b.LatestBlock]
 }
 
-func (b *Blockchain) getLatest(block *FinalBlock) *FinalBlock {
+func (b *Blockchain) getLatest() *FinalBlock {
 	b.mux.Lock()
 	defer b.mux.Unlock()
 	return b._getLatest()
+}
+
+func (b *Blockchain) getByIteration(iteration uint64) *FinalBlock {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+
+	currentBlock := b.LatestBlock
+	for {
+		block := b.Blocks[currentBlock]
+		if uint64(block.ProposedBlock.Iteration) <= iteration {
+			return block
+		} else if block.ProposedBlock.PreviousGossipHash == [32]byte{} {
+			// we are at the genisis block
+			return block
+		}
+		currentBlock = block.ProposedBlock.PreviousGossipHash
+	}
+
 }
 
 func (b *Blockchain) _add(block *FinalBlock) {

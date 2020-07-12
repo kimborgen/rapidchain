@@ -192,6 +192,7 @@ func coordinatorSetup(conn net.Conn, portNumber int, nodeCtx *NodeCtx) {
 	// add genesis block here
 
 	nodeCtx.i = CurrentIteration{}
+	nodeCtx.i.i = 1 // set start iteration to 1 because genesisBlock is iteration 0
 
 	nodeCtx.routingTable = routingTable
 
