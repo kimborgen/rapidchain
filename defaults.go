@@ -4,8 +4,8 @@ package main
 
 const default_function string = "node"
 const default_vCPUs uint = 16
-const default_instances uint = 8
-const default_n uint = 16
+const default_instances uint = 16
+const default_n uint = 32
 const default_m uint = 4 // number of comimttees
 const default_totalF uint = 3
 const default_committeeF uint = 2
