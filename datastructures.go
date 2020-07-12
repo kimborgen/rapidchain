@@ -5,10 +5,12 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
+	"log"
 	"math/big"
 	"sort"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/kimborgen/go-merkletree"
 )
@@ -151,6 +153,23 @@ func (t *TxPool) getAll() []*Transaction {
 		txes[i] = tx
 		i++
 	}
+	return txes
+}
+
+func (t *TxPool) getEnoughToFillblock(blockSize uint) []*Transaction {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	txes := []*Transaction{}
+	size := uint(0)
+	for _, tx := range t.pool {
+		txes = append(txes, tx)
+		tmp := unsafe.Sizeof(*tx)
+		size += uint(tmp)
+		if size >= default_B {
+			break
+		}
+	}
+	log.Printf("Got %d bytes from txpool", size)
 	return txes
 }
 

@@ -1,5 +1,7 @@
 package main
 
+import "math"
+
 // Default variables to be used if flag is not set
 
 const default_function string = "node"
@@ -15,8 +17,8 @@ const default_nUsers uint = default_n * 20
 const default_totalCoins uint = default_nUsers * 10
 const default_tps uint = default_m
 
-// var default_B uint = uint(math.Pow(2, 21)) // 2 mill
-var default_B uint = 2000000 // 2 mill
+var default_B uint = uint(math.Pow(2, 21)) // 2 mill
+// var default_B uint = 2000000 // 2 mill
 
 // TODO add these to flags and so on
 const default_kappa = 128 //128

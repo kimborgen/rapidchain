@@ -255,7 +255,7 @@ func createProposeBlock(nodeCtx *NodeCtx) *ProposedBlock {
 
 	// get all transactions
 	// TODO limit the amout of transactions to be included
-	txes := nodeCtx.txPool.getAll()
+	txes := nodeCtx.txPool.getEnoughToFillblock(default_B)
 
 	txes = processTransactions(nodeCtx, txes)
 
