@@ -41,8 +41,8 @@ func sendMsgToCommittee(msg Msg, committee *Committee) {
 }
 
 func sendMsgToCommitteeAndSelf(msg Msg, nodeCtx *NodeCtx) {
-	go dialAndSend(nodeCtx.self.IP, msg)
 	for _, v := range nodeCtx.committee.Members {
 		go dialAndSend(v.IP, msg)
 	}
+	go dialAndSend(nodeCtx.self.IP, msg)
 }

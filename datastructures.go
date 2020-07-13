@@ -519,7 +519,7 @@ type InTx struct {
 }
 
 func (iTx *InTx) String() string {
-	return fmt.Sprintf("[InTx] TxHash: %s, OrigTxHash: %s,\n\t\t N: %d, Sig: %s", bytes32ToString(iTx.TxHash), iTx.N, bytesToString(iTx.Sig.bytes()))
+	return fmt.Sprintf("[InTx] TxHash: %s, N: %d, Sig: %s", bytes32ToString(iTx.TxHash), iTx.N, bytesToString(iTx.Sig.bytes()))
 }
 
 type OutTx struct {
@@ -816,7 +816,7 @@ func (b *FinalBlock) processBlock(nodeCtx *NodeCtx) {
 			// crossMap := nodeCtx.crossTxPool.getMap(t.OrigTxHash)
 			original := nodeCtx.crossTxPool.getOriginal(t.OrigTxHash)
 			if original == nil {
-				errFatal(nil, fmt.Sprint("Crosstxmap or original was nil", original))
+				errFatal(nil, fmt.Sprint("original was nil", original))
 			}
 
 			// outputs should be exactly the same in final and original
@@ -1042,23 +1042,23 @@ func (cMsgs *ConsensusMsgs) getConsensusMsg(gh [32]byte, ID [32]byte) *Consensus
 	return cMsgs.m[gh][ID]
 }
 
-func (cMsgs *ConsensusMsgs) _getAllConsensusMsgs(gh [32]byte) *[]*ConsensusMsg {
+func (cMsgs *ConsensusMsgs) _getAllConsensusMsgs(gh [32]byte) []*ConsensusMsg {
 	ret := make([]*ConsensusMsg, len(cMsgs.m[gh]))
 	iter := 0
 	for _, v := range cMsgs.m[gh] {
 		ret[iter] = v
 		iter++
 	}
-	return &ret
+	return ret
 }
 
-func (cMsgs *ConsensusMsgs) getAllConsensusMsgs(gh [32]byte) *[]*ConsensusMsg {
+func (cMsgs *ConsensusMsgs) getAllConsensusMsgs(gh [32]byte) []*ConsensusMsg {
 	cMsgs.mux.Lock()
 	defer cMsgs.mux.Unlock()
 	return cMsgs._getAllConsensusMsgs(gh)
 }
 
-func (cMsgs *ConsensusMsgs) pop(gh [32]byte) *[]*ConsensusMsg {
+func (cMsgs *ConsensusMsgs) pop(gh [32]byte) []*ConsensusMsg {
 	cMsgs.mux.Lock()
 	defer cMsgs.mux.Unlock()
 	ret := cMsgs._getAllConsensusMsgs(gh)
@@ -1070,30 +1070,14 @@ func (cMsgs *ConsensusMsgs) pop(gh [32]byte) *[]*ConsensusMsg {
 // Counts valid votes
 // Votes are valid if the iteration is I and Tag is echo or accepted
 // Votes are valid if the iteration is below I and Tag is accepted
-func (cMsgs *ConsensusMsgs) countValidVotes(gh [32]byte, nodeCtx *NodeCtx) int {
+func (cMsgs *ConsensusMsgs) countValidVotes(gh [32]byte) int {
 	cMsgs.mux.Lock()
 	defer cMsgs.mux.Unlock()
 
-	// get current iteration
-	currentI := nodeCtx.i.getI()
-
-	// get iteration of ProposedBlock
-	pBlock := nodeCtx.blockchain.getProposedBlock(gh)
-	if pBlock == nil {
-		return -1
-	}
-	pBlockI := pBlock.Iteration
-
 	votes := 0
 	for _, v := range cMsgs.m[gh] {
-		if currentI > pBlockI {
-			if v.Tag == "accept" {
-				votes++
-			}
-		} else {
-			if v.Tag == "echo" || v.Tag == "accept" {
-				votes++
-			}
+		if v.Tag == "echo" || v.Tag == "accept" {
+			votes++
 		}
 	}
 	return votes
@@ -1416,11 +1400,24 @@ func (ida *IdaMsgs) getMsgs(root [32]byte) []IDAGossipMsg {
 }
 
 func (ida *IdaMsgs) _getLenOfChunks(root [32]byte) int {
-	var totalChunks int
-	for _, msg := range ida.m[root] {
-		totalChunks += len(msg.Chunks)
+
+	isIndex := make([]bool, default_kappa+default_parity)
+	for _, elem := range ida.m[root] {
+		for i, _ := range elem.Chunks {
+			// gather leaf node position from proof
+			index := elem.Proofs[i].Index
+			isIndex[index] = true
+		}
 	}
-	return totalChunks
+
+	tot := 0
+	for _, index := range isIndex {
+		if index {
+			tot++
+		}
+	}
+
+	return tot
 }
 
 func (ida *IdaMsgs) getLenOfChunks(root [32]byte) int {

@@ -105,18 +105,9 @@ func nodeHandleConnection(
 		cMsg, ok := msg.Msg.(ConsensusMsg)
 		notOkErr(ok, "ConsensusSignature decoding")
 
-		if cMsg.Tag == "propose" {
-			// empty channel
-			for len(nodeCtx.channels.echoChan) > 0 {
-				<-nodeCtx.channels.echoChan
-			}
-			go handleConsensusEcho(&cMsg, nodeCtx)
-			go handleConsensusAccept(&cMsg, nodeCtx, 0)
-		}
-
 		// check if we allready have accepted the block
 		if nodeCtx.blockchain.isBlock(cMsg.GossipHash) {
-			log.Println("Block allready accepted")
+			log.Println("Block allready accepted", bytes32ToString(cMsg.GossipHash), cMsg.Tag)
 			// TODO add signature maybe?
 			return
 		}
@@ -133,7 +124,7 @@ func nodeHandleConnection(
 				}
 				timeout++
 				// fmt.Printf("waiting for proposed block %d\n", timeout)
-				if timeout > 10 {
+				if timeout > 5 {
 					break
 				}
 			}
@@ -150,7 +141,16 @@ func nodeHandleConnection(
 			}
 		}
 
-		handleConsensus(nodeCtx, &cMsg, msg.FromPub)
+		if cMsg.Tag == "propose" {
+			// empty channel
+			for len(nodeCtx.channels.echoChan) > 0 {
+				<-nodeCtx.channels.echoChan
+			}
+			go handleConsensusEcho(cMsg, nodeCtx, 0)
+			go handleConsensusAccept(cMsg, nodeCtx, 0)
+		}
+
+		handleConsensus(nodeCtx, cMsg, msg.FromPub)
 
 	case "find_node":
 		kMsg, ok := msg.Msg.(KademliaFindNodeMsg)
@@ -231,13 +231,15 @@ func nodeHandleConnection(
 		// nodeCtx.txPool.safeAdd(&tMsg)
 	case "request_block":
 		iter, ok := msg.Msg.(uint64)
+
 		notOkErr(ok, "request_block decoding")
 
+		lastBlock := nodeCtx.blockchain.getLatest()
 		block := nodeCtx.blockchain.getByIteration(iter)
 		tmp := new(RequestBlockAnswer)
 		// {block, uint64(nodeCtx.i.getI())}
 		tmp.Block = block
-		tmp.LastIteration = uint64(nodeCtx.i.getI())
+		tmp.LastIteration = uint64(lastBlock.ProposedBlock.Iteration)
 		sendMsg(conn, tmp)
 
 	default:
@@ -284,11 +286,9 @@ func requestAndAddMissingBlocks(nodeCtx *NodeCtx) {
 
 		conn := dial(node.IP)
 
-		log.Println("Before request")
 		sendMsg(conn, request)
 		reciveMsg(conn, response)
 		conn.Close()
-		log.Println("After recived request")
 
 		if response == nil {
 			errFatal(nil, "response was nil")
@@ -301,16 +301,16 @@ func requestAndAddMissingBlocks(nodeCtx *NodeCtx) {
 		break
 	}
 
-	// TODO verify block and signatures
-	if len(response.Block.Signatures) < len(nodeCtx.committee.Members)/2 {
-		log.Println("not enough signatures")
-		return
-	}
+	// // TODO verify block and signatures
+	// if len(response.Block.Signatures) < len(nodeCtx.committee.Members)/2 {
+	// 	log.Println("not enough signatures")
+	// 	return
+	// }
 
-	if response.Block.ProposedBlock.PreviousGossipHash != lastBlock.ProposedBlock.GossipHash {
-		log.Println("PreviousGossipHash was not lastBlock")
-		return
-	}
+	// if response.Block.ProposedBlock.PreviousGossipHash != lastBlock.ProposedBlock.GossipHash {
+	// 	log.Println("PreviousGossipHash was not lastBlock")
+	// 	return
+	// }
 
 	nodeCtx.blockchain.add(response.Block)
 	response.Block.forceProcessBlock(nodeCtx)

@@ -208,13 +208,13 @@ func handleIDAGossipMsg(
 		}
 
 		// add to list
-		nodeCtx.idaMsgs.add(idaMsg.MerkleRoot, idaMsg)
-
+		nodeCtx.idaMsgs.mux.Lock()
+		nodeCtx.idaMsgs._add(idaMsg.MerkleRoot, idaMsg)
 		// check if we have enough chunks to recreate
-		if nodeCtx.idaMsgs.getLenOfChunks(idaMsg.MerkleRoot) >= default_kappa {
+		if nodeCtx.idaMsgs._getLenOfChunks(idaMsg.MerkleRoot) >= default_kappa {
 			// recreate data array and fill it with known chunks
 			data := make([][]byte, default_kappa+default_parity)
-			for _, elem := range nodeCtx.idaMsgs.getMsgs(idaMsg.MerkleRoot) {
+			for _, elem := range nodeCtx.idaMsgs._getMsgs(idaMsg.MerkleRoot) {
 				for i, chunk := range elem.Chunks {
 					// gather leaf node position from proof
 					index := elem.Proofs[i].Index
@@ -234,10 +234,19 @@ func handleIDAGossipMsg(
 
 			// now we can recreate the message
 			err = enc.Reconstruct(data)
-			ifErrFatal(err, "Could not reconstruct data")
+			if err != nil {
+				fmt.Println(data)
+				fmt.Println(len(data))
+				for i, d := range data {
+					fmt.Println(i, bytesToString(d))
+				}
+				fmt.Println("Len of chunks: ", nodeCtx.idaMsgs._getLenOfChunks(idaMsg.MerkleRoot))
+				ifErrFatal(err, "Could not reconstruct data")
+			}
 
 			// add IDAMsg to check that we don't allready have a msg for this root
 			ok := nodeCtx.reconstructedIdaMsgs.safeAdd(idaMsg.MerkleRoot, data)
+			nodeCtx.idaMsgs.mux.Unlock()
 
 			if ok {
 				// now the first default_kappa elements of data is the message! :)
@@ -250,6 +259,8 @@ func handleIDAGossipMsg(
 
 				return true
 			}
+		} else {
+			nodeCtx.idaMsgs.mux.Unlock()
 		}
 
 		go gossipSend(idaMsg, nodeCtx)

@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/jinzhu/copier"
 	"github.com/kimborgen/go-merkletree"
 )
 
@@ -318,7 +319,11 @@ func processTransactions(nodeCtx *NodeCtx, txes []*Transaction) []*Transaction {
 	//crossTxResponses := make(map[[32]byte]*Transaction)
 
 	// sort txes to their corresponding assigments
-	for _, t := range txes {
+	for _, trans := range txes {
+
+		t := new(Transaction)
+		copier.Copy(t, trans)
+
 		// fmt.Println(t)
 		if t.OrigTxHash == [32]byte{} && t.Hash != [32]byte{} {
 			// this is a normal transaction
@@ -401,6 +406,7 @@ func proccessCrossTxResponse(nodeCtx *NodeCtx,
 
 	// verify proof of consensus (PoC):
 	if t.ProofOfConsensus == nil {
+		fmt.Println(t)
 		errFatal(nil, "Proof of consensus was nil")
 	}
 

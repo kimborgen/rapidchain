@@ -16,7 +16,7 @@ func startNewIteration(nodeCtx *NodeCtx) {
 	// If this node is leader then initate leader protocol
 	if nodeCtx.committee.CurrentLeader.Bytes == nodeCtx.self.Priv.Pub.Bytes {
 
-		go debug(nodeCtx)
+		// go debug(nodeCtx)
 
 		// wait untill tx pool is large enough
 		for {
@@ -25,7 +25,7 @@ func startNewIteration(nodeCtx *NodeCtx) {
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
-			fmt.Print(l)
+			// fmt.Print(l)
 		}
 		leader(nodeCtx)
 	}
@@ -71,9 +71,9 @@ func leaderElection(nodeCtx *NodeCtx) {
 	// calculate hash of self
 	selfHash := hash(byteSliceAppend(nodeCtx.self.Priv.Pub.Bytes[:], rnd[:], currI))
 	// fmt.Println("self: ", bytes32ToString(selfHash), bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
-	for i, lof := range listOfHashes {
-		fmt.Println(i, bytes32ToString(lof.toSort), bytes32ToString(lof.original))
-	}
+	// for i, lof := range listOfHashes {
+	// 	fmt.Println(i, bytes32ToString(lof.toSort), bytes32ToString(lof.original))
+	// }
 
 	// the leader is the lowest in list except if selfHash is lower than that.
 	// fmt.Println(byte32Operations(selfHash, "<", listOfHashes[0].toSort))
@@ -114,9 +114,9 @@ func shouldISendCrossTX(nodeCtx *NodeCtx) bool {
 	// calculate hash of self
 	selfHash := hash(byteSliceAppend(nodeCtx.self.Priv.Pub.Bytes[:], rnd[:], currI))
 	// fmt.Println("self: ", bytes32ToString(selfHash), bytes32ToString(nodeCtx.self.Priv.Pub.Bytes))
-	for i, lof := range listOfHashes {
-		fmt.Println(i, bytes32ToString(lof.toSort), bytes32ToString(lof.original))
-	}
+	// for i, lof := range listOfHashes {
+	// 	fmt.Println(i, bytes32ToString(lof.toSort), bytes32ToString(lof.original))
+	// }
 
 	// log(m)
 	_cutoff := math.Log2(float64(len(nodeCtx.committee.Members)))
@@ -130,7 +130,7 @@ func shouldISendCrossTX(nodeCtx *NodeCtx) bool {
 	return false
 }
 
-func basicLeaderElection(nodeCtx *NodeCtx) *PubKey {
+func basicLeaderElectionasdf(nodeCtx *NodeCtx) *PubKey {
 	// Find out who is the leader, returns ID of leader
 	// For now just pick the one with the lowest ID.
 	// TODO: create an actual leader election protocol based on epoch randomness and nonce, assume every node is online
@@ -176,12 +176,12 @@ func leader(nodeCtx *NodeCtx) {
 	IDAGossip(nodeCtx, block.encode(), "block")
 
 	// wait until we have recivied and recreated IDA message
-	for !nodeCtx.blockchain._isProposedBlock(block.GossipHash) {
+	for !nodeCtx.blockchain.isProposedBlock(block.GossipHash) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	// sleep a delta before iniation consensus
-	time.Sleep(time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
+	time.Sleep(time.Duration(2*nodeCtx.flagArgs.delta) * time.Millisecond)
 
 	// create a propose msg to initate consensus
 	cMsg := new(ConsensusMsg)

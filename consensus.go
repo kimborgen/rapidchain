@@ -11,8 +11,15 @@ import (
 
 func handleConsensus(
 	nodeCtx *NodeCtx,
-	cMsg *ConsensusMsg,
+	_cMsg ConsensusMsg,
 	fromPub *PubKey) {
+
+	cMsg := new(ConsensusMsg)
+	cMsg.GossipHash = _cMsg.GossipHash
+	cMsg.Tag = _cMsg.Tag
+	cMsg.Pub = _cMsg.Pub
+	cMsg.Sig = _cMsg.Sig
+
 	switch cMsg.Tag {
 	case "propose":
 		// TODO validate block with header
@@ -29,7 +36,7 @@ func handleConsensus(
 		// check that we do not have any other message with this gossipheader
 		// TODO if blocks are reproposed then chagne this
 		if nodeCtx.consensusMsgs._exists(cMsg.GossipHash) {
-			fmt.Println(cMsg)
+			// fmt.Println(cMsg)
 			errr(nil, "allready have msgs in this gossiphash")
 			return
 		}
@@ -38,6 +45,9 @@ func handleConsensus(
 
 		// unlock mutex
 		nodeCtx.consensusMsgs.mux.Unlock()
+
+		dur := time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond
+		time.Sleep(dur)
 
 		// log.Println("sent echo")
 		newMsg := new(ConsensusMsg)
@@ -51,14 +61,6 @@ func handleConsensus(
 	case "echo":
 		// add echo
 
-		log.Println("Echo recived from ", fromPub.string())
-		// wait for delta so each node will recive enough echos
-		dur := time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond
-		time.Sleep(dur)
-
-		_msg := Msg{"consensus", "echo", nodeCtx.self.Priv.Pub}
-		go dialAndSend(coord+":8080", _msg)
-
 		// TODO check valid header
 
 		// TODO check if every header we have recived is unique
@@ -67,6 +69,44 @@ func handleConsensus(
 		// TODO check that we recived propose from leader allready
 
 		// check that we have recived a propose from this gossiphash
+		dur := time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond
+		if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
+			timeout := 0
+			for {
+				time.Sleep(dur)
+				if nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
+					break
+				}
+				if timeout > 3 {
+					// errFatal(nil, "Recived an echo, but have not recived a propose for this gossiphash")
+					// handleConsensusAccept will deal with missing block
+					return
+				}
+				timeout++
+			}
+		}
+
+		// log.Println("Echo recived from ", fromPub.string())
+		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
+
+		_msg := Msg{"consensus", "echo", nodeCtx.self.Priv.Pub}
+		go dialAndSend(coord+":8080", _msg)
+	case "pending":
+		// don't accept this iteration
+
+		// TODO check validity of header
+
+		// TODO check that it is different from other recivied valid headers
+		errFatal(nil, "this shouldnt be reached")
+		// set header of fromid to this pending, so accept round can check
+		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
+
+		_msg := Msg{"consensus", "pending", nodeCtx.self.Priv.Pub}
+		go dialAndSend(coord+":8080", _msg)
+		// terminate without accepting
+		return
+	case "accept":
+		dur := time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond
 
 		if !nodeCtx.consensusMsgs.exists(cMsg.GossipHash) {
 			timeout := 0
@@ -83,24 +123,7 @@ func handleConsensus(
 				timeout++
 			}
 		}
-		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
-		nodeCtx.channels.echoChan <- true
 
-	case "pending":
-		// don't accept this iteration
-
-		// TODO check validity of header
-
-		// TODO check that it is different from other recivied valid headers
-
-		// set header of fromid to this pending, so accept round can check
-		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
-
-		_msg := Msg{"consensus", "pending", nodeCtx.self.Priv.Pub}
-		go dialAndSend(coord+":8080", _msg)
-		// terminate without accepting
-		return
-	case "accept":
 		nodeCtx.consensusMsgs.add(cMsg.GossipHash, cMsg.Pub.Bytes, cMsg)
 
 		_msg := Msg{"consensus", "accept", nodeCtx.self.Priv.Pub}
@@ -117,32 +140,36 @@ func handleConsensus(
 
 // Because we start the synchronous rounds on the first propose from leader, then we spawn this,
 func handleConsensusEcho(
-	cMsg *ConsensusMsg,
-	nodeCtx *NodeCtx) {
+	cMsg ConsensusMsg,
+	nodeCtx *NodeCtx, recursive uint) {
 
 	requiredVotes := (len(nodeCtx.committee.Members) / int(nodeCtx.flagArgs.committeeF)) + 1
 
-	// leader propose, echo gossip
-	time.Sleep(2 * time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
-
-	if len(nodeCtx.channels.echoChan) < int(requiredVotes) {
-		//  wait a few ms to be sure (computing)
-		timeout := uint(0)
-		for len(nodeCtx.channels.echoChan) < int(requiredVotes) {
-			time.Sleep(10 * time.Millisecond)
-			timeout += 1
-			if t := nodeCtx.flagArgs.delta; timeout >= t {
-				// requestAndAddMissingBlocks(nodeCtx)
-				errr(nil, fmt.Sprintf("Echos not recived in time %d", t))
-				return
-			}
-		}
+	if recursive > 0 {
+		time.Sleep(time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
+	} else {
+		time.Sleep(2 * time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
 	}
+	// leader propose, echo gossip
+
+	// if len(nodeCtx.channels.echoChan) < int(requiredVotes) {
+	// 	//  wait a few ms to be sure (computing)
+	// 	timeout := uint(0)
+	// 	for len(nodeCtx.channels.echoChan) < int(requiredVotes) {
+	// 		time.Sleep(10 * time.Millisecond)
+	// 		timeout += 1
+	// 		if timeout >= nodeCtx.flagArgs.delta/100 {
+	// 			// requestAndAddMissingBlocks(nodeCtx)
+	// 			errr(nil, fmt.Sprintf("Echos not recived in time %d\n"))
+	// 			return
+	// 		}
+	// 	}
+	// }
 
 	// TODO handle pending
 
 	// check if we have enough required votes
-	totalVotes := nodeCtx.consensusMsgs.countValidVotes(cMsg.GossipHash, nodeCtx)
+	totalVotes := nodeCtx.consensusMsgs.countValidVotes(cMsg.GossipHash)
 
 	// TODO change to flagArgs
 	if totalVotes >= requiredVotes {
@@ -161,21 +188,24 @@ func handleConsensusEcho(
 
 		log.Println("Not enough votes ", totalVotes)
 
+		recursive++
+		if recursive >= 2 {
+			return
+		}
+		handleConsensusEcho(cMsg, nodeCtx, recursive)
 		// requestAndAddMissingBlocks(nodeCtx)
-
 		return
 	}
 }
 
 func handleConsensusAccept(
-	cMsg *ConsensusMsg,
+	cMsg ConsensusMsg,
 	nodeCtx *NodeCtx,
 	recursive int64) {
 
 	requiredVotes := (len(nodeCtx.committee.Members) / int(nodeCtx.flagArgs.committeeF)) + 1
 
 	if recursive > 0 {
-		log.Println("Recursive iter", recursive)
 		time.Sleep(time.Duration(nodeCtx.flagArgs.delta) * time.Millisecond)
 	} else {
 		// leader propose, echo gossip, accept gossip
@@ -197,7 +227,7 @@ func handleConsensusAccept(
 		// create new final block
 		finalBlock := new(FinalBlock)
 		finalBlock.ProposedBlock = block
-		finalBlock.Signatures = *consensusMsgs
+		finalBlock.Signatures = consensusMsgs
 
 		// add to blockchain
 		nodeCtx.blockchain.add(finalBlock)
@@ -207,7 +237,7 @@ func handleConsensusAccept(
 
 		// create cross-tx-responses and send
 		if shouldISendCrossTX(nodeCtx) {
-			fmt.Println("\nRouting cross tx!! \n")
+			// fmt.Println("\nRouting cross tx!! \n")
 			for _, t := range finalBlock.ProposedBlock.Transactions {
 				what := t.whatAmI(nodeCtx)
 				if what == "crosstxresponse_C_in" {
@@ -268,7 +298,8 @@ func handleConsensusAccept(
 
 		log.Println("Not enough votes ", totalVotes)
 		recursive++
-		if recursive >= 5 {
+		if recursive >= 2 {
+			requestAndAddMissingBlocks(nodeCtx)
 			startNewIteration(nodeCtx)
 		} else {
 			handleConsensusAccept(cMsg, nodeCtx, recursive)

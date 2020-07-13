@@ -339,8 +339,7 @@ func coordinator(
 		if t_npm%(6/c_div) == 0 {
 			f--
 		}
-
-		if i%t_npm < f {
+		if t_npm == 0 || i%t_npm < f {
 			nodeInfos[i].IsHonest = false
 		} else {
 			nodeInfos[i].IsHonest = true
