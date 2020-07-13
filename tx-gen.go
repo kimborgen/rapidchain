@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -103,6 +104,16 @@ func (t *Tracker) completeTx(files []*os.File) {
 	files[0].Sync()
 }
 
+type UserSets struct {
+	m   map[[32]byte]*UTXOSet
+	mux sync.Mutex
+}
+
+type TransactionTracker struct {
+	m   map[[32]byte]*Tracker
+	mux sync.Mutex
+}
+
 func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, gensisBlocks []*FinalBlock, finalBlockChan chan FinalBlock, files []*os.File) {
 	// Emulates users by continously generating transactions
 
@@ -111,17 +122,18 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	}
 
 	// make a UTXO set for each user, such that we can easily look up UTXO for each user
-	userSets := make(map[[32]byte]*UTXOSet)
+	userSets := new(UserSets)
+	userSets.m = make(map[[32]byte]*UTXOSet)
 	for _, u := range *users {
 		id := u.Pub.Bytes
-		userSets[id] = new(UTXOSet)
-		userSets[id].init()
+		userSets.m[id] = new(UTXOSet)
+		userSets.m[id].init()
 	}
 
 	// add gensis block output to the main UTXO set
 	for _, b := range gensisBlocks {
 		for _, out := range b.ProposedBlock.Transactions[0].Outputs {
-			userSets[out.PubKey.Bytes].add(b.ProposedBlock.Transactions[0].Hash, out)
+			userSets.m[out.PubKey.Bytes].add(b.ProposedBlock.Transactions[0].Hash, out)
 		}
 	}
 
@@ -139,9 +151,9 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 	nodeCtx := new(NodeCtx)
 	nodeCtx.committeeList = cList
 
-	transactionTracker := make(map[[32]byte]*Tracker)
+	transactionTracker := new(TransactionTracker)
+	transactionTracker.m = make(map[[32]byte]*Tracker)
 
-	i := 0
 	if flagArgs.local {
 		time.Sleep(10 * time.Second)
 	} else {
@@ -161,14 +173,16 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 				if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs == nil {
 					fmt.Println("crosstx")
 					// return "crosstx"
-					if _, ok := transactionTracker[t.OrigTxHash]; !ok {
+					transactionTracker.mux.Lock()
+					if _, ok := transactionTracker.m[t.OrigTxHash]; !ok {
 						fmt.Println("T: ", t)
-						fmt.Println("Tracker: ", transactionTracker[t.OrigTxHash])
+						fmt.Println("Tracker: ", transactionTracker.m[t.OrigTxHash])
 						errFatal(nil, "transaction in recived finalblock not in transactionTracker")
 					}
 
 					// increase crosstx counter for this transaction
-					transactionTracker[t.OrigTxHash].crossTxes++
+					transactionTracker.m[t.OrigTxHash].crossTxes++
+					transactionTracker.mux.Unlock()
 					continue
 				} else if t.Hash == [32]byte{} && t.OrigTxHash != [32]byte{} && t.Outputs != nil {
 					// return "originaltx"
@@ -185,13 +199,14 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 				}
 
 				id := t.ifOrigRetOrigIfNotRetHash()
-				if _, ok := transactionTracker[id]; !ok {
+				transactionTracker.mux.Lock()
+				if _, ok := transactionTracker.m[id]; !ok {
 					fmt.Println("id", id)
 					fmt.Println("T: ", t)
-					fmt.Println("Tracker: ", transactionTracker[id])
+					fmt.Println("Tracker: ", transactionTracker.m[id])
 					errFatal(nil, "transaction in recived finalblock not in transactionTracker")
 				}
-				transactionTracker[id].completeTx(files)
+				transactionTracker.m[id].completeTx(files)
 
 				var normalorfinal string
 				if t.Hash != [32]byte{} && t.OrigTxHash == [32]byte{} {
@@ -202,33 +217,42 @@ func txGenerator(flagArgs *FlagArgs, allNodes []NodeAllInfo, users *[]PrivKey, g
 					errFatal(nil, t.String())
 				}
 
-				log.Println(normalorfinal, " tx finished in ", transactionTracker[id].dur.Seconds(), " seconds, with ", transactionTracker[id].crossTxes, " crosstxes.")
+				log.Println(normalorfinal, " tx finished in ", transactionTracker.m[id].dur.Seconds(), " seconds, with ", transactionTracker.m[id].crossTxes, " crosstxes.")
+				transactionTracker.mux.Unlock()
 
+				userSets.mux.Lock()
 				for _, out := range t.Outputs {
-					userSets[out.PubKey.Bytes].add(id, out)
+					userSets.m[out.PubKey.Bytes].add(id, out)
 				}
+				userSets.mux.Unlock()
 
 			}
 		}
 
-		_txGenerator(flagArgs, &allNodes, users, userSets, transactionTracker)
+		after := time.Now()
+
+		go _txGenerator(flagArgs, &allNodes, users, userSets, transactionTracker)
 
 		// Sleep such that time used to process finishedblock and create new tx is subtracted such that we emulate near perfect tps.
-		after := time.Now()
 		// fmt.Println("Sleep for: ", (time.Second/time.Duration(flagArgs.tps))-after.Sub(before))
-		time.Sleep((time.Second / time.Duration(flagArgs.tps)) - after.Sub(before))
-		i++
+		dur := (time.Second / time.Duration(flagArgs.tps)) - after.Sub(before)
+		// log.Println("sleeping for ", dur)
+		if dur > 0 {
+			time.Sleep(dur)
+		}
 	}
 }
 
-func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey, userSets map[[32]byte]*UTXOSet, transactionTracker map[[32]byte]*Tracker) {
+func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey, userSets *UserSets, transactionTracker *TransactionTracker) {
 
 	// pick random user to send transaction from
 	rnd := rand.Intn(len(*users))
 	user := (*users)[rnd]
 
 	// pick a random value from the users total value
-	totVal := userSets[user.Pub.Bytes]._totalValue()
+	userSets.mux.Lock()
+	totVal := userSets.m[user.Pub.Bytes]._totalValue()
+	userSets.mux.Unlock()
 
 	timeout := 0
 	for {
@@ -238,7 +262,9 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 			user = (*users)[rnd]
 
 			// pick a random value from the users total value
-			totVal = userSets[user.Pub.Bytes]._totalValue()
+			userSets.mux.Lock()
+			totVal = userSets.m[user.Pub.Bytes]._totalValue()
+			userSets.mux.Unlock()
 			time.Sleep(10 * time.Millisecond)
 			timeout++
 			if timeout >= 10 {
@@ -249,11 +275,27 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 		}
 
 	}
-	valueToSend := uint(rand.Intn(int(totVal)) + 1)
+
+	_value := totVal / 4
+	if _value < 1 {
+		return
+	}
+	value := int(_value)
+	var valueToSend uint
+	if value <= 1 {
+		valueToSend = 1
+	} else {
+		valueToSend = uint(rand.Intn(value) + 1)
+	}
 
 	// get all outputs required to fill that value
-	outputs, ok := userSets[user.Pub.Bytes].getOutputsToFillValue(valueToSend)
-	notOkErr(ok, "not enough output value, but this should not happen")
+	userSets.mux.Lock()
+	outputs, ok := userSets.m[user.Pub.Bytes].getOutputsToFillValue(valueToSend)
+	// userSets.mux.Unlock()
+	if !ok {
+		userSets.mux.Unlock()
+		return
+	}
 
 	// fmt.Println(outputs)
 
@@ -265,8 +307,9 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	totalInputValue := uint(0)
 	t := new(Transaction)
 	inputs := make([]*InTx, len(outputs))
+	// userSets.mux.Lock()
 	for i, o := range outputs {
-		outTx := userSets[user.Pub.Bytes]._getAndRemove(o.txID, o.n)
+		outTx := userSets.m[user.Pub.Bytes]._getAndRemove(o.txID, o.n)
 
 		totalInputValue += outTx.Value
 
@@ -275,6 +318,7 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 		newInTx.N = outTx.N
 		inputs[i] = newInTx
 	}
+	userSets.mux.Unlock()
 
 	// only one or two outputs (if there is some value left over, then send it back to user)
 	txOutputs := []*OutTx{}
@@ -314,15 +358,18 @@ func _txGenerator(flagArgs *FlagArgs, allNodes *[]NodeAllInfo, users *[]PrivKey,
 	msg := Msg{"transaction", t, user.Pub}
 	go dialAndSend(node.IP, msg)
 
-	if _, ok := transactionTracker[t.Hash]; ok {
-		fmt.Println("Previous tx: ", transactionTracker[t.Hash])
+	transactionTracker.mux.Lock()
+	if _, ok := transactionTracker.m[t.Hash]; ok {
+		fmt.Println("Previous tx: ", transactionTracker.m[t.Hash])
 		fmt.Println("New tx: ", t)
+		transactionTracker.mux.Unlock()
 		errFatal(nil, "transaction allready sent")
 	}
 	track := new(Tracker)
 	track.t = t
 	track.sent = time.Now()
-	transactionTracker[t.Hash] = track
+	transactionTracker.m[t.Hash] = track
+	transactionTracker.mux.Unlock()
 
 	// add output to sets
 	// for _, out := range t.Outputs {
